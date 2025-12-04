@@ -96,6 +96,21 @@ test:k_qemu_mps2_an505 --run_under="//pw_kernel/tooling:qemu \
   --semihosting \
   --image "
 
+# QEMU lm3s6965evb target configuration (ARMv7-M / Cortex-M3)
+# =======================================
+common:k_qemu_lm3s6965 --config=k_common
+common:k_qemu_lm3s6965 --platforms=//pw_kernel/target/lm3s6965evb:lm3s6965evb
+run:k_qemu_lm3s6965 --run_under="//pw_kernel/tooling:qemu \
+  --cpu cortex-m3 \
+  --machine lm3s6965evb \
+  --semihosting \
+  --image "
+test:k_qemu_lm3s6965 --run_under="//pw_kernel/tooling:qemu \
+  --cpu cortex-m3 \
+  --machine lm3s6965evb \
+  --semihosting \
+  --image "
+
 # QEMU virt riscv32 target configuration
 # =======================================
 common:k_qemu_virt_riscv32 --config=k_common

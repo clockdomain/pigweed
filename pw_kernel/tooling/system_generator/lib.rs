@@ -152,6 +152,17 @@ impl ArchConfigInterface for system_config::Armv8MConfig {
     }
 }
 
+impl ArchConfigInterface for system_config::Armv7MConfig {
+    fn get_arch_crate_name(&self) -> &'static str {
+        "arch_arm_cortex_m"
+    }
+
+    fn get_start_fn_address(&self, flash_start_address: u64) -> u64 {
+        // On Armv7M, the +1 is to denote thumb mode.
+        flash_start_address + 1
+    }
+}
+
 impl ArchConfigInterface for system_config::RiscVConfig {
     fn get_arch_crate_name(&self) -> &'static str {
         "arch_riscv"
@@ -263,6 +274,10 @@ impl<'a, A: ArchConfigInterface + Serialize> SystemGenerator<'a, A> {
                 app.flash_start_address + app.flash_size_bytes,
                 FLASH_ALIGNMENT,
             );
+            
+            // DEBUG: Print app flash addresses  
+            eprintln!("DEBUG: App flash: 0x{:x} - 0x{:x}", 
+                     app.flash_start_address, next_flash_start_address);
 
             app.ram_start_address = next_ram_start_address;
             next_ram_start_address =
