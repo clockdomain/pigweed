@@ -95,6 +95,7 @@ def _app_linker_script(name, system_config, app_name, **kwargs):
     if kwargs.get("template") == None:
         template = select({
             "@platforms//cpu:armv8-m": "@pigweed//pw_kernel/tooling/system_generator/templates:armv8m_app.ld.jinja",
+            "@platforms//cpu:armv7-m": "@pigweed//pw_kernel/tooling/system_generator/templates:armv7m_app.ld.jinja",
             "@platforms//cpu:riscv32": "@pigweed//pw_kernel/tooling/system_generator/templates:riscv_app.ld.jinja",
             "//conditions:default": None,
         })

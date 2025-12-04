@@ -15,6 +15,7 @@
 exports_files(
     [
         "app.rs.jinja",
+        "armv7m_app.ld.jinja",
         "armv8m_app.ld.jinja",
         "interrupts.rs.jinja",
         "riscv_app.ld.jinja",

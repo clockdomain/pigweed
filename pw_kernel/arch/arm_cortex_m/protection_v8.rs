@@ -12,11 +12,20 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+//! PMSAv8 (ARMv8-M) Memory Protection Unit implementation
+
 use kernel_config::{CortexMKernelConfigInterface as _, KernelConfig};
 use memory_config::{MemoryRegion, MemoryRegionType};
 
 use crate::regs::Regs;
 use crate::regs::mpu::*;
+
+#[repr(u8)]
+enum AttrIndex {
+    NormalMemoryRO = 0,
+    NormalMemoryRW = 1,
+    DeviceMemory = 2,
+}
 
 #[derive(Copy, Clone)]
 struct MpuRegion {
@@ -24,13 +33,6 @@ struct MpuRegion {
     rbar: RbarVal,
     #[allow(dead_code)]
     rlar: RlarVal,
-}
-
-#[repr(u8)]
-enum AttrIndex {
-    NormalMemoryRO = 0,
-    NormalMemoryRW = 1,
-    DeviceMemory = 2,
 }
 
 impl MpuRegion {
@@ -108,10 +110,10 @@ impl MpuRegion {
     }
 }
 
-/// Cortex-M memory configuration
+/// Cortex-M memory configuration (PMSAv8)
 ///
 /// Represents the full configuration of the Cortex-M memory configuration
-/// through the MPU block.
+/// through the MPU block for ARMv8-M processors.
 pub struct MemoryConfig {
     mpu_regions: [MpuRegion; KernelConfig::NUM_MPU_REGIONS],
     generic_regions: &'static [MemoryRegion],
@@ -151,12 +153,14 @@ impl MemoryConfig {
                 .with_hfnmiena(false)
                 .with_privdefena(true),
         );
+        
         for (index, region) in self.mpu_regions.iter().enumerate() {
             pw_assert::debug_assert!(index < 255);
             #[expect(clippy::cast_possible_truncation)]
             {
                 mpu.rnr.write(RnrVal::default().with_region(index as u8));
             }
+            
             mpu.rbar.write(region.rbar);
             mpu.rlar.write(region.rlar);
         }
@@ -176,7 +180,7 @@ impl MemoryConfig {
     }
 }
 
-/// Initialize the MPU for supporting user space memory protection.
+/// Initialize the MPU for supporting user space memory protection (PMSAv8).
 pub fn init() {
     let mut mpu = Regs::get().mpu;
 
