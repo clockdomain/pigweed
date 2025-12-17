@@ -48,6 +48,19 @@ platform(
 
 # Static kernel configuration
 rust_library(
+    name = "entry",
+    srcs = ["entry.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "//pw_kernel/kernel",
+        "@rust_crates//:cortex-m-rt",
+    ],
+)
+
+rust_library(
     name = "config",
     srcs = ["config.rs"],
     crate_name = "kernel_config",
@@ -95,22 +108,14 @@ rust_binary(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":codegen",
+        ":entry",
         ":linker_script",
         "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "//pw_kernel/kernel",
-    ],
-)
-
-# Hello world userspace process
-rust_binary(
-    name = "hello_process",
-    srcs = ["hello.rs"],
-    crate_name = "hello",
-    edition = "2024",
-    tags = ["kernel"],
-    target_compatible_with = TARGET_COMPATIBLE_WITH,
-    deps = [
+        "//pw_kernel/subsys/console:console_backend",
+        "//pw_kernel/target:target_common",
         "//pw_kernel/userspace",
+        "@rust_crates//:cortex-m-semihosting",
     ],
 )
 
@@ -118,7 +123,7 @@ rust_binary(
 system_image(
     name = "minimal",
     apps = [
-        ":hello_process",
+        "//pw_kernel/target/armv7m_minimal/hello",
     ],
     kernel = ":kernel_target",
     platform = ":armv7m_minimal",  # Use our custom platform

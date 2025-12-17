@@ -264,7 +264,7 @@ impl MemoryConfig {
                 .with_privdefena(true),
         );
 
-        pw_log::info!("Programming {} MPU regions (PMSAv7)", self.mpu_regions.len());
+        pw_log::info!("Programming {} MPU regions (PMSAv7)", self.mpu_regions.len() as u32);
         
         for (index, region) in self.mpu_regions.iter().enumerate() {
             region.write(&mut mpu, index);

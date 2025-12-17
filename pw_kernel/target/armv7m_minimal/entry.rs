@@ -11,33 +11,24 @@
 // WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // License for the specific language governing permissions and limitations under
 // the License.
-
-//! Minimal ARMv7-M test process - just proves the system boots
-
 #![no_std]
 #![no_main]
 
-use userspace as kernel;
+use arch_arm_cortex_m::Arch;
 
-#[no_mangle]
-fn main() -> ! {
-    // Simple loop to prove we booted
-    let mut counter: u32 = 0;
-    loop {
-        counter = counter.wrapping_add(1);
-        
-        // Exit after a few iterations
-        if counter > 1000 {
-            unsafe {
-                kernel::shutdown(0);
-            }
-        }
-    }
+#[unsafe(no_mangle)]
+#[allow(non_snake_case)]
+pub extern "C" fn pw_assert_HandleFailure() -> ! {
+    use kernel::Arch as _;
+    Arch::panic()
 }
 
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    unsafe {
-        kernel::shutdown(1);
-    }
+#[cortex_m_rt::entry]
+fn main() -> ! {
+    kernel::static_init_state!(static mut INIT_STATE: InitKernelState<Arch>);
+
+    // SAFETY: `main` is only executed once, so we never generate more than one
+    // `&mut` reference to `INIT_STATE`.
+    #[allow(static_mut_refs)]
+    kernel::main(Arch, unsafe { &mut INIT_STATE });
 }

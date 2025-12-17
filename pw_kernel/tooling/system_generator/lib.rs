@@ -161,6 +161,52 @@ impl ArchConfigInterface for system_config::Armv7MConfig {
         // On Armv7M, the +1 is to denote thumb mode.
         flash_start_address + 1
     }
+
+    fn calculate_and_validate_config(
+        &mut self,
+        config: &mut system_config::BaseConfig,
+    ) -> Result<()> {
+        // Same as Armv8M - add kernel code mapping for svc_return
+        for app in &mut config.apps {
+            app.process.memory_mappings.insert(
+                0,
+                MemoryMapping {
+                    name: "kernel_code".to_string(),
+                    ty: MemoryMappingType::ReadOnlyExecutable,
+                    start_address: config.kernel.flash_start_address,
+                    size_bytes: config.kernel.flash_size_bytes,
+                },
+            );
+        }
+
+        // Validate 32-byte alignment for PMSAv7
+        for app in &config.apps {
+            for mapping in &app.process.memory_mappings {
+                if mapping.start_address % 32 != 0 {
+                    return Err(anyhow!(
+                        "Unaligned memory mapping: application {}'s memory mapping {}'s start address ({:#10x}) must be aligned to 32 bytes",
+                        app.name,
+                        mapping.name,
+                        mapping.start_address,
+                    ));
+                }
+                if mapping.size_bytes % 32 != 0 {
+                    return Err(anyhow!(
+                        "Unaligned memory mapping: application {}'s memory mapping {}'s size ({}) must be aligned to 32 bytes",
+                        app.name,
+                        mapping.name,
+                        mapping.size_bytes,
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn get_interrupt_table_link_section(&self) -> Option<String> {
+        Some(".vector_table.interrupts".to_string())
+    }
 }
 
 impl ArchConfigInterface for system_config::RiscVConfig {

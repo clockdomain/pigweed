@@ -16,7 +16,7 @@
 
 #![no_std]
 
-use kernel_config::{CortexMKernelConfigInterface, KernelConfigInterface};
+pub use kernel_config::{CortexMKernelConfigInterface, KernelConfigInterface, NvicConfigInterface};
 
 /// Static kernel configuration.
 ///
@@ -37,4 +37,10 @@ impl CortexMKernelConfigInterface for KernelConfig {
 impl KernelConfigInterface for KernelConfig {
     /// System clock frequency in Hz.
     const SYSTEM_CLOCK_HZ: u64 = KernelConfig::SYS_TICK_HZ as u64;
+}
+
+pub struct NvicConfig;
+
+impl NvicConfigInterface for NvicConfig {
+    const MAX_IRQS: u32 = 64;
 }
