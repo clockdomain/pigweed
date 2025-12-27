@@ -101,12 +101,42 @@ pub enum RbarAp {
 }
 
 #[cfg(feature = "mpu_v8")]
+impl RbarAp {
+    /// Convert from raw bits. All 2-bit patterns are valid variants.
+    #[must_use]
+    pub const fn from_bits(bits: u8) -> Self {
+        match bits & 0b11 {
+            0b00 => Self::RwPrivileged,
+            0b01 => Self::RwAny,
+            0b10 => Self::RoPrivileged,
+            0b11 => Self::RoAny,
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[cfg(feature = "mpu_v8")]
 #[repr(u8)]
 pub enum RbarSh {
     NonShareable = 0b00,
     Reserved = 0b01,
     OuterShareable = 0b10,
     InnerShareable = 0b11,
+}
+
+#[cfg(feature = "mpu_v8")]
+impl RbarSh {
+    /// Convert from raw bits. All 2-bit patterns are valid variants.
+    #[must_use]
+    pub const fn from_bits(bits: u8) -> Self {
+        match bits & 0b11 {
+            0b00 => Self::NonShareable,
+            0b01 => Self::Reserved,
+            0b10 => Self::OuterShareable,
+            0b11 => Self::InnerShareable,
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[cfg(feature = "mpu_v8")]
@@ -126,11 +156,8 @@ impl RbarVal {
     /// Extract access permissions field.
     #[must_use]
     pub const fn ap(&self) -> RbarAp {
-        // Safety: Value is masked to only contain valid enum values.
         #[expect(clippy::cast_possible_truncation)]
-        unsafe {
-            core::mem::transmute(ops::get_u32(self.0, 1, 2) as u8)
-        }
+        RbarAp::from_bits(ops::get_u32(self.0, 1, 2) as u8)
     }
 
     /// Update access permissions field.
@@ -142,11 +169,8 @@ impl RbarVal {
     /// Extract shareability field.
     #[must_use]
     pub const fn sh(&self) -> RbarSh {
-        // Safety: Value is masked to only contain valid enum values.
         #[expect(clippy::cast_possible_truncation)]
-        unsafe {
-            core::mem::transmute(ops::get_u32(self.0, 3, 4) as u8)
-        }
+        RbarSh::from_bits(ops::get_u32(self.0, 3, 4) as u8)
     }
 
     /// Update shareability field.
@@ -246,6 +270,25 @@ pub enum RasrAp {
 }
 
 #[cfg(feature = "mpu_v7")]
+impl RasrAp {
+    /// Convert from raw bits. All 3-bit patterns are valid variants.
+    #[must_use]
+    pub const fn from_bits(bits: u8) -> Self {
+        match bits & 0b111 {
+            0b000 => Self::NoAccess,
+            0b001 => Self::RwPrivileged,
+            0b010 => Self::RoPrivileged,
+            0b011 => Self::RwAny,
+            0b100 => Self::Reserved1,
+            0b101 => Self::RoPrivileged2,
+            0b110 => Self::RoAny,
+            0b111 => Self::RoAny2,
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[cfg(feature = "mpu_v7")]
 #[repr(u8)]
 pub enum RasrTexScb {
     /// Strongly-ordered, shareable
@@ -317,11 +360,8 @@ impl RasrVal {
 
     /// Extract access permissions field.
     pub const fn ap(&self) -> RasrAp {
-        // Safety: Value is masked to only contain valid enum values.
         #[expect(clippy::cast_possible_truncation)]
-        unsafe {
-            core::mem::transmute(ops::get_u32(self.0, 24, 26) as u8)
-        }
+        RasrAp::from_bits(ops::get_u32(self.0, 24, 26) as u8)
     }
 
     /// Update access permissions field.
