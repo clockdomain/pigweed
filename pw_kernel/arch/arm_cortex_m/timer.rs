@@ -79,12 +79,14 @@ pub fn systick_early_init() {
     let rvr_val = rvr.read().with_reload(SYSTICK_RELOAD_VALUE - 1);
     rvr.write(rvr_val);
 
-    // enable counter and interrupts
-    csr_val = csr.read().with_enable(true).with_tickint(true);
+    // enable counter but NOT interrupts yet
+    // Interrupts will be enabled later in systick_init() after PreemptDisableGuard is dropped
+    csr_val = csr.read().with_enable(true).with_tickint(false);
     csr.write(csr_val);
 }
 
 pub fn systick_init() {
+    info!("Enabling SysTick interrupts");
     let systick_regs = Regs::get().systick;
     let ticks_per_10ms = systick_regs.calib.read().tenms();
     info!("Ticks per 10ms: {}", ticks_per_10ms as u32);
@@ -94,6 +96,11 @@ pub fn systick_init() {
             KernelConfig::SYS_TICK_HZ as u32
         );
     }
+    
+    // Now that PreemptDisableGuard has been dropped, enable SysTick interrupts
+    let mut csr = systick_regs.csr;
+    let csr_val = csr.read().with_tickint(true);
+    csr.write(csr_val);
 }
 
 #[unsafe(no_mangle)]
