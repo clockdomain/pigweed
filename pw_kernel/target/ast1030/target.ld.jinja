@@ -250,11 +250,12 @@ __sbss = _pw_zero_init_ram_start;
 __ebss = _pw_zero_init_ram_end;
 __sdata = _pw_static_init_ram_start;
 __edata = _pw_static_init_ram_end;
-/* AST1030-specific: Set __sidata = __sdata for RAM-only execution.
- * cortex-m-rt checks if __sidata != __sdata to decide whether to copy .data.
- * Since ROM bootloader already copied everything to RAM, we tell cortex-m-rt
- * that load address equals runtime address (no copy needed). */
-__sidata = __sdata;
+/* AST1030-specific: Force cortex-m-rt to copy .data section.
+ * While the ROM bootloader copies firmware to RAM on real hardware, QEMU doesn't
+ * emulate this. Setting __sidata to the load address forces cortex-m-rt to copy
+ * .data from its load address (in FLASH region) to runtime address (in RAM region),
+ * ensuring initialized static variables are properly set up. */
+__sidata = LOADADDR(.static_init_ram);
 __pre_init = DefaultPreInit;
 PROVIDE(DefaultHandler = DefaultHandler_);
 PROVIDE(NonMaskableInt = DefaultHandler);
