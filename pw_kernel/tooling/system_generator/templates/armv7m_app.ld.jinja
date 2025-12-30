@@ -101,6 +101,8 @@ SECTIONS
   /* Explicitly initialized global and static data. (.data)*/
   .static_init_ram : ALIGN(4)
   {
+    /* Explicitly set location counter to start of RAM for .data VMA */
+    . = ORIGIN(RAM);
     *(.data)
     *(.data*)
     . = ALIGN(4);
@@ -128,6 +130,8 @@ SECTIONS
    */
   .zero_init_ram (NOLOAD) : ALIGN(4)
   {
+    /* BSS follows .data in RAM - no need to reset location counter again
+     * since .static_init_ram already set it to RAM region. */
     *(.bss)
     *(.bss*)
     *(COMMON)

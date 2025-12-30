@@ -155,6 +155,8 @@ SECTIONS
   /* Explicitly initialized global and static data. (.data)*/
   .static_init_ram : ALIGN(4)
   {
+    /* Explicitly set location counter to start of RAM for .data VMA */
+    . = ORIGIN(RAM);
     *(.data)
     *(.data*)
     . = ALIGN(4);
