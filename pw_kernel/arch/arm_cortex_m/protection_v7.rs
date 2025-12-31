@@ -271,11 +271,19 @@ impl MemoryConfig {
     pub unsafe fn write(&self) {
         let mut mpu = Regs::get().mpu;
         
-        // Disable MPU before configuration
+        // NOTE: We do NOT disable the MPU during reconfiguration on ARMv7-M.
+        // Disabling the MPU removes all memory protections, which can cause:
+        // - Speculative memory accesses corrupting the stack
+        // - Exception frames being overwritten
+        // - Unpredictable behavior during context switches
+        //
+        // PMSAv7 supports updating regions while enabled - just ensure barriers after.
+        // Configure HFNMIENA=false (faults during NMI/HardFault) and PRIVDEFENA=true
+        // (privileged code can access unmapped regions).
         mpu.ctrl.write(
             mpu.ctrl
                 .read()
-                .with_enable(false)
+                .with_enable(true)  // Keep MPU enabled during update
                 .with_hfnmiena(false)
                 .with_privdefena(true),
         );
