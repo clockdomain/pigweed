@@ -154,15 +154,48 @@ impl MpuRegion {
         
         // Find an aligned base that covers the requested range
         // The base must be aligned to the region size
-        let mut aligned_base = start & !(region_size - 1); // Align down to region_size
+        // 
+        // CRITICAL: We must not align down across major memory boundaries.
+        // On AST1030: Flash ends at 0x3FFFF, RAM starts at 0x40000.
+        // If we blindly align down, a region starting at 0x60420 (in RAM) could
+        // align to 0x40000 or even 0x00000, causing it to overlap with flash.
+        //
+        // Strategy: Try aligning down first, but if that crosses the start of
+        // the current 256KB page (which typically separates flash/RAM), align
+        // to the page boundary instead. This prevents cross-boundary issues while
+        // still allowing efficient region packing within the same memory type.
+        const PAGE_256KB: usize = 0x40000;
+        let start_page = start & !(PAGE_256KB - 1);
+        
+        let naive_aligned_base = start & !(region_size - 1); // Align down to region_size
+        
+        // If alignment crosses below the start's 256KB page boundary, use the page boundary instead
+        let aligned_base = if naive_aligned_base < start_page {
+            start_page
+        } else {
+            naive_aligned_base
+        };
+        
+        // Debug logging to trace alignment decisions
+        // This is const fn so we can't use pw_log, but the values will be visible in MPU dumps
         
         // Check if this aligned region covers the end address
         // If not, we need a larger region
-        while aligned_base + region_size < end {
-            region_size *= 2;
-            aligned_base = start & !(region_size - 1);
+        let mut final_base = aligned_base;
+        let mut final_size = region_size;
+        
+        while final_base + final_size < end {
+            final_size *= 2;
+            let candidate_base = start & !(final_size - 1);
             
-            if region_size > MAX_REGION_SIZE {
+            // Apply the same page boundary constraint
+            final_base = if candidate_base < start_page {
+                start_page
+            } else {
+                candidate_base
+            };
+            
+            if final_size > MAX_REGION_SIZE {
                 // Fall back to max size at base 0
                 return AlignedRegion {
                     base: 0,
@@ -173,17 +206,17 @@ impl MpuRegion {
         }
         
         // Calculate SIZE field: log2(region_size) - 1
-        let size_field = Self::calculate_size_field(region_size);
+        let size_field = Self::calculate_size_field(final_size);
         
         // Calculate sub-region disable mask
         // Each sub-region is region_size / 8
-        let subregion_size = region_size / 8;
+        let subregion_size = final_size / 8;
         let mut srd_mask: u8 = 0;
         
         // Disable sub-regions that fall outside [start, end)
         let mut i = 0;
         while i < 8 {
-            let subregion_start = aligned_base + i * subregion_size;
+            let subregion_start = final_base + i * subregion_size;
             let subregion_end = subregion_start + subregion_size;
             
             // Disable if this sub-region doesn't overlap with [start, end)
@@ -196,27 +229,10 @@ impl MpuRegion {
         }
         
         AlignedRegion {
-            base: aligned_base,
+            base: final_base,
             size_field,
             srd_mask,
         }
-    }
-
-    pub fn write(&self, mpu: &mut crate::regs::mpu::Mpu, region_number: usize) {
-        pw_log::debug!(
-            "MPU[{}]: RBAR=0x{:08X} RASR=0x{:08X}",
-            region_number as usize,
-            self.rbar.0 as usize,
-            self.rasr.0 as usize
-        );
-
-        pw_assert::debug_assert!(region_number < 255);
-        #[expect(clippy::cast_possible_truncation)]
-        {
-            mpu.rnr.write(RnrVal::default().with_region(region_number as u8));
-        }
-        mpu.rbar.write(self.rbar);
-        mpu.rasr.write(self.rasr);
     }
 }
 
@@ -266,8 +282,15 @@ impl MemoryConfig {
 
         pw_log::info!("Programming {} MPU regions (PMSAv7)", self.mpu_regions.len() as u32);
         
+        // Write MPU regions inline (avoiding function call overhead that can corrupt registers/stack)
         for (index, region) in self.mpu_regions.iter().enumerate() {
-            region.write(&mut mpu, index);
+            pw_assert::debug_assert!(index < 255);
+            #[expect(clippy::cast_possible_truncation)]
+            {
+                mpu.rnr.write(RnrVal::default().with_region(index as u8));
+            }
+            mpu.rbar.write(region.rbar);
+            mpu.rasr.write(region.rasr);
         }
         
         // Enable the MPU

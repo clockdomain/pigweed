@@ -61,6 +61,8 @@ pub fn start() {
             memory_config::MemoryRegionType::ReadOnlyExecutable,
             {% elif mapping.type == "read_write_data" -%}
             memory_config::MemoryRegionType::ReadWriteData,
+            {% elif mapping.type == "read_write_executable" -%}
+            memory_config::MemoryRegionType::ReadWriteExecutable,
             {% endif -%}
             {{mapping.start_address | hex}},
             {{(mapping.start_address + mapping.size_bytes) | hex}},

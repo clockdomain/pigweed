@@ -340,11 +340,21 @@ impl<'a, A: ArchConfigInterface + Serialize> SystemGenerator<'a, A> {
 
     fn populate_memory_mappings(&mut self) {
         for app in self.config.base.apps.iter_mut() {
+            // For non-XIP platforms (like AST1030), the "flash" region is actually
+            // RAM where code, .data, and .bss all reside. The linker places these
+            // sections contiguously in memory. Since .data and .bss need to be
+            // writable, we must mark this region as ReadWriteExecutable.
+            // 
+            // For true XIP platforms, code executes from ROM and only .rodata is
+            // in the flash region, so ReadOnlyExecutable is appropriate.
+            //
+            // TODO: Add a config flag to distinguish XIP vs non-XIP platforms.
+            // For now, use ReadWriteExecutable to support AST1030 and similar.
             app.process.memory_mappings.insert(
                 0,
                 MemoryMapping {
                     name: "flash".to_string(),
-                    ty: MemoryMappingType::ReadOnlyExecutable,
+                    ty: MemoryMappingType::ReadWriteExecutable,
                     start_address: app.flash_start_address,
                     size_bytes: app.flash_size_bytes,
                 },

@@ -130,6 +130,7 @@ pub enum MemoryMappingType {
     Device,
     ReadOnlyExecutable,
     ReadWriteData,
+    ReadWriteExecutable,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
