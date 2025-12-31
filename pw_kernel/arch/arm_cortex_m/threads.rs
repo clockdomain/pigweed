@@ -81,9 +81,6 @@ impl ArchThreadState {
         initial_pc: usize,
         (r0, r1, r2, r3): (usize, usize, usize, usize),
     ) {
-        info!("initialize_frame: user_frame={:#010x}, kernel_frame={:#010x}, initial_pc={:#010x}",
-              user_frame as usize, kernel_frame as usize, initial_pc as usize);
-        
         // Clear the stack and set up the exception frame such that it would
         // return to the function passed in with arg0 and arg1 passed in the
         // first two argument slots.
@@ -214,21 +211,6 @@ impl Arch for crate::Arch {
         let mut r = crate::regs::Regs::get();
         info!("MPU regions: {}", get_num_mpu_regions(&mut r.mpu) as u8);
 
-        // Check FPU state - CPACR at 0xE000ED88
-        let cpacr = unsafe { core::ptr::read_volatile(0xE000ED88 as *const u32) };
-        let fpu_enabled = (cpacr >> 20) & 0xF;
-        info!("CPACR: {:#010x}, FPU bits: {:#x}", cpacr as u32, fpu_enabled as u32);
-        
-        // Disable FPU to test theory - ARMv7-M doesn't handle FPU context properly
-        if fpu_enabled != 0 {
-            info!("Disabling FPU for ARMv7-M compatibility test");
-            unsafe {
-                core::ptr::write_volatile(0xE000ED88 as *mut u32, cpacr & !0x00F00000);
-            }
-            let cpacr_after = unsafe { core::ptr::read_volatile(0xE000ED88 as *const u32) };
-            info!("CPACR after: {:#010x}", cpacr_after as u32);
-        }
-
         unsafe {
             // Set the VTOR (assumes it exists)
             unsafe extern "C" {
@@ -312,25 +294,17 @@ impl kernel::scheduler::thread::ThreadState for ArchThreadState {
         initial_function: extern "C" fn(usize, usize, usize),
         args: (usize, usize, usize),
     ) {
-        pw_log::info!("initialize_kernel_frame: memory_config ptr={:#010x}", memory_config as usize);
         self.memory_config = memory_config;
-        
-        // Allocate both frames together from the kernel stack.
-        // The kernel frame must be directly below the user frame with no padding,
-        // as the exception hardware will pop the kernel frame and then expect
-        // the user frame immediately above it.
-        let stack_end = unsafe { kernel_stack.end_mut() };
-        
-        // Align the combined allocation to 8 bytes (required for ARMv7-M)
-        let combined_frame: *mut u8 = Stack::aligned_stack_allocation_mut(stack_end, 8);
-        
-        // User frame is at the top (higher address)
-        let user_frame: *mut ExceptionFrame = unsafe {
-            combined_frame.byte_add(size_of::<KernelExceptionFrame>()).cast()
-        };
-        
-        // Kernel frame is at the bottom (lower address)
-        let kernel_frame: *mut KernelExceptionFrame = combined_frame.cast();
+        let user_frame: *mut ExceptionFrame =
+            Stack::aligned_stack_allocation_mut(unsafe { kernel_stack.end_mut() }, STACK_ALIGNMENT);
+
+        let kernel_frame: *mut KernelExceptionFrame = Stack::aligned_stack_allocation_mut(
+            user_frame.cast(),
+            // For kernel threads, kernel_frame needs to come immediately after
+            // the user stack regardless of alignment because that is what the
+            // exception wrapper assembly expects.
+            size_of::<usize>(),
+        );
 
         // TODO: This is unsound: `user_frame` and `kernel_frame` need to be
         // `*mut` to preserve the ability to mutate their referents in the Rust
@@ -450,15 +424,13 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
     // as the context switch frame for when it is returned to later. Clear active thread
     // afterwards.
     let active_thread = unsafe { get_active_thread() };
-    info!("PendSV: active_thread={:#010x}, frame={:#010x}", 
-          active_thread as usize, frame as usize);
     log_if::info_if!(
         LOG_CONTEXT_SWITCH,
         "PendSV: active thread {:#010x}",
         active_thread as usize
     );
 
-    pw_assert::assert!(!active_thread.is_null(), "active_thread is NULL in PendSV!");
+    pw_assert::assert!(!active_thread.is_null());
 
     unsafe {
         (*active_thread).frame = frame;
@@ -469,11 +441,6 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
     // Return the arch frame for the current thread
     let mut sched_state = crate::Arch.get_scheduler().lock(crate::Arch);
     let new_thread = unsafe { sched_state.get_current_arch_thread_state() };
-    let new_frame = unsafe { (*new_thread).frame };
-    
-    info!("PendSV: returning new_thread={:#010x}, new_frame={:#010x}",
-          new_thread as usize, new_frame as usize);
-    
     log_if::info_if!(
         LOG_CONTEXT_SWITCH,
         "Context switch to thread '{}' ({:#010x})",
@@ -485,11 +452,7 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
     // memory config space.
     #[cfg(feature = "user_space")]
     unsafe {
-        pw_log::info!("Context switch: new_thread memory_config={:#010x}, active_thread memory_config={:#010x}", 
-                      (*new_thread).memory_config as usize, 
-                      (*active_thread).memory_config as usize);
         if (*new_thread).memory_config != (*active_thread).memory_config {
-            pw_log::info!("Writing new memory config to MPU");
             (*(*new_thread).memory_config).write();
         }
     }
@@ -497,5 +460,5 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
 
     unsafe { THREAD_LOCAL_STATE = NonNull::from_ref(&(*new_thread).local) }
 
-    new_frame
+    unsafe { (*new_thread).frame }
 }
