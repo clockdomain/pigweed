@@ -295,14 +295,30 @@ impl kernel::scheduler::thread::ThreadState for ArchThreadState {
         args: (usize, usize, usize),
     ) {
         self.memory_config = memory_config;
+        
+        // Frame allocation strategy:
+        // 
+        // The user_space feature is always enabled for ARM Cortex-M (see BUILD.bazel).
+        // This means the exception handler (user_space_exception macro) always saves/restores
+        // PSP explicitly in the kernel frame, regardless of whether the thread is a kernel
+        // thread or user thread.
+        //
+        // Because PSP is explicitly managed in software:
+        // - User threads: User frame at PSP, kernel frame at MSP (separate stacks)
+        // - Kernel threads: Both frames on MSP, but PSP=0 is saved in kernel frame
+        //
+        // The frames do NOT need to be contiguous in memory because:
+        // - The hardware never needs to "walk" from kernel frame to user frame
+        // - PSP is loaded from the saved value in the kernel frame
+        // - Each frame is accessed independently via its respective stack pointer
+        //
+        // This is different from a hypothetical kernel-only mode (user_space feature disabled)
+        // where both frames would need to be contiguous on MSP for hardware exception return.
         let user_frame: *mut ExceptionFrame =
             Stack::aligned_stack_allocation_mut(unsafe { kernel_stack.end_mut() }, STACK_ALIGNMENT);
 
         let kernel_frame: *mut KernelExceptionFrame = Stack::aligned_stack_allocation_mut(
             user_frame.cast(),
-            // For kernel threads, kernel_frame needs to come immediately after
-            // the user stack regardless of alignment because that is what the
-            // exception wrapper assembly expects.
             size_of::<usize>(),
         );
 
