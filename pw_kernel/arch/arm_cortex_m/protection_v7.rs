@@ -295,6 +295,19 @@ impl MemoryConfig {
         
         // Enable the MPU
         mpu.ctrl.write(mpu.ctrl.read().with_enable(true));
+        
+        // CRITICAL: ARMv7-M requires explicit memory barriers after MPU configuration changes.
+        // Per ARM DDI 0403E.e Section B3.5.8:
+        // - DSB ensures all MPU register writes are complete before proceeding
+        // - ISB flushes the instruction pipeline, ensuring subsequent instructions
+        //   are fetched and executed with the new MPU configuration active
+        //
+        // Without these barriers, the processor may execute cached instructions or
+        // access memory using stale MPU settings, causing spurious faults and
+        // infinite context switch loops.
+        unsafe {
+            core::arch::asm!("dsb", "isb", options(nostack, preserves_flags));
+        }
     }
 
     /// Log the details of the memory configuration.
