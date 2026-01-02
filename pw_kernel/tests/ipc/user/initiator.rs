@@ -17,7 +17,7 @@
 use core::mem::size_of;
 
 use app_initiator::handle;
-use pw_status::{Error, Result};
+use pw_status::{Error, Result, StatusCode};
 use userspace::time::Instant;
 use userspace::{entry, syscall};
 
@@ -66,6 +66,12 @@ macro_rules! test_log_error {
 }
 
 fn test_uppercase_ipcs() -> Result<()> {
+    // Always emit a simple start marker on ARMv7-M so we can
+    // see IPC progress in detokenized logs, even though most
+    // test logging is disabled there.
+    #[cfg(target_arch = "arm")]
+    pw_log::info!("Ipc test starting");
+
     test_log_info!("Ipc test starting");
     for c in 'a'..='z' {
         const SEND_BUF_LEN: usize = size_of::<char>();
@@ -136,6 +142,18 @@ fn entry() -> ! {
     test_log_info!("🔄 RUNNING");
 
     let ret = test_uppercase_ipcs();
+
+    // On ARMv7-M, emit a minimal pass/fail marker via pw_log so
+    // that the outcome is visible in detokenized logs without
+    // re-enabling all verbose test logging.
+    #[cfg(target_arch = "arm")]
+    {
+        if ret.is_err() {
+            pw_log::error!("IPC test FAILED: {}", ret.status_code() as u32);
+        } else {
+            pw_log::info!("IPC test PASSED");
+        }
+    }
 
     // Log that an error occurred so that the app that caused the shutdown is logged.
     if ret.is_err() {

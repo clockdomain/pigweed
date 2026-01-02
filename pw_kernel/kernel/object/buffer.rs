@@ -134,8 +134,10 @@ unsafe fn ipc_copy_bytes(dst: NonNull<u8>, src: NonNull<u8>, len: usize) {
         while i < len {
             // Perform byte-wise loads/stores so the compiler does not lower
             // this to a word-wise memcpy with alignment assumptions.
-            let byte = src.as_ptr().add(i).read();
-            dst.as_ptr().add(i).write(byte);
+            unsafe {
+                let byte = src.as_ptr().add(i).read();
+                dst.as_ptr().add(i).write(byte);
+            }
             i += 1;
         }
     }
