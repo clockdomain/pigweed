@@ -158,8 +158,17 @@ impl ArchConfigInterface for system_config::Armv7MConfig {
     }
 
     fn get_start_fn_address(&self, flash_start_address: u64) -> u64 {
-        // On Armv7M, the +1 is to denote thumb mode.
-        flash_start_address + 1
+        // flash_start_address is where app code starts in the linker script.
+        // However, the ELF segment is aligned to 0x1000 bytes, so it starts earlier.
+        // system_assembler preserves the segment base address and relocates sections
+        // to pack them from the segment base. So _start ends up at the segment base.
+        //
+        // Calculate segment base by aligning down to 0x1000:
+        const SEGMENT_ALIGNMENT: u64 = 0x1000;
+        let segment_base = flash_start_address & !(SEGMENT_ALIGNMENT - 1);
+        
+        // On Armv7M, the +1 denotes Thumb mode.
+        segment_base + 1
     }
 
     fn calculate_and_validate_config(

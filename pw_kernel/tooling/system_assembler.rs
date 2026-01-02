@@ -275,14 +275,81 @@ impl<'data> SystemImage<'data> {
                 let new_name = format!("{}_{}", symbol.name, app_name);
                 new_symbol.name = new_name.into_bytes().into();
             }
+            // Adjust symbol address for section relocation.
+            // There are two cases:
+            //   1) Symbols that are associated with a section (normal case)
+            //   2) Absolute/linker-defined symbols (no section) whose value
+            //      still falls inside a relocated section's address range.
             if symbol.section.is_some() {
-                new_symbol.section =
-                    Self::get_mapped_section_id(section_map, symbol.section.unwrap())?;
+                let old_section_id = symbol.section.unwrap();
+                let new_section_id = Self::get_mapped_section_id(section_map, old_section_id)?;
+                new_symbol.section = new_section_id;
+
+                // If symbol is in a section, adjust its address for the section's new location.
+                if let Some(new_id) = new_section_id {
+                    let old_section = app.sections.get(old_section_id);
+                    let new_section = self.builder.sections.get(new_id);
+
+                    // Calculate offset within the section.
+                    let offset_in_section = symbol.st_value.wrapping_sub(old_section.sh_addr);
+
+                    // Set symbol address to new section base + offset.
+                    new_symbol.st_value = new_section.sh_addr.wrapping_add(offset_in_section);
+                } else {
+                    // No section mapping, preserve original value.
+                    new_symbol.st_value = symbol.st_value;
+                }
+            } else {
+                // Symbol not explicitly associated with a section (e.g. absolute
+                // or linker-defined). If the value falls within a relocated
+                // section's address range, adjust it using the same
+                // section-relative offset logic. Otherwise, leave it unchanged.
+                let mut new_value = symbol.st_value;
+
+                for old_section in &app.sections {
+                    // Only consider allocatable sections that are actually
+                    // mapped into the loadable image.
+                    if !old_section.is_alloc() {
+                        continue;
+                    }
+
+                    let start = old_section.sh_addr;
+                    let size = old_section.sh_size;
+                    if size == 0 {
+                        continue;
+                    }
+
+                    let end = start.wrapping_add(size);
+                    let addr = symbol.st_value;
+
+                    if addr < start || addr >= end {
+                        continue;
+                    }
+
+                    // This absolute symbol's value falls within this section.
+                    // Treat it as if it were section-relative and apply the
+                    // same relocation that we apply to section-based symbols.
+                    let old_section_id = old_section.id();
+                    let new_section_id = Self::get_mapped_section_id(section_map, old_section_id)?;
+
+                    if let Some(new_id) = new_section_id {
+                        let new_section = self.builder.sections.get(new_id);
+                        let offset_in_section = addr.wrapping_sub(start);
+                        new_value = new_section.sh_addr.wrapping_add(offset_in_section);
+                    }
+
+                    // An absolute symbol should belong to at most one
+                    // allocatable section range, so we can stop once we've
+                    // adjusted it.
+                    break;
+                }
+
+                new_symbol.st_value = new_value;
             }
+
             new_symbol.st_info = symbol.st_info;
             new_symbol.st_other = symbol.st_other;
             new_symbol.st_shndx = symbol.st_shndx;
-            new_symbol.st_value = symbol.st_value;
             new_symbol.st_size = symbol.st_size;
             new_symbol.version = symbol.version;
             new_symbol.version_hidden = symbol.version_hidden;
