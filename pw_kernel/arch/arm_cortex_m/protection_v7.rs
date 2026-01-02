@@ -288,8 +288,6 @@ impl MemoryConfig {
                 .with_privdefena(true),
         );
 
-        pw_log::info!("Programming {} MPU regions (PMSAv7)", self.mpu_regions.len() as u32);
-        
         // Write MPU regions inline (avoiding function call overhead that can corrupt registers/stack)
         for (index, region) in self.mpu_regions.iter().enumerate() {
             pw_assert::debug_assert!(index < 255);
@@ -318,18 +316,9 @@ impl MemoryConfig {
         }
     }
 
-    /// Log the details of the memory configuration.
-    pub fn dump(&self) {
-        for (index, region) in self.mpu_regions.iter().enumerate() {
-            pw_log::debug!(
-                "MPU region {}: RBAR={:#010x}, RASR={:#010x}",
-                index as usize,
-                region.rbar.0 as usize,
-                region.rasr.0 as usize
-            );
-        }
-    }
 }
+
+// Removed dump() method - debug logging not needed
 
 /// Initialize the MPU for supporting user space memory protection (PMSAv7).
 /// 
