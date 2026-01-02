@@ -16,6 +16,36 @@ load("@rules_rust//rust:defs.bzl", "rust_library", "rust_proc_macro")
 
 package(default_visibility = ["//visibility:public"])
 
+# ARM Cortex-M entry assembly - compiled separately to prevent Rust codegen override
+# See: EXPERT_ANALYSIS_Rust_LLVM_Entry_Code.md - Solution A
+cc_library(
+    name = "entry_asm_arm_cortex_m",
+    srcs = ["arm_cortex_m/entry.s"],
+    linkopts = [
+        "-nostartfiles",
+    ],
+    tags = ["kernel"],
+    target_compatible_with = select({
+        "@platforms//cpu:armv7-m": [],
+        "@platforms//cpu:armv8-m": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+# RISC-V entry assembly - compiled separately
+cc_library(
+    name = "entry_asm_riscv",
+    srcs = ["riscv/entry.s"],
+    linkopts = [
+        "-nostartfiles",
+    ],
+    tags = ["kernel"],
+    target_compatible_with = select({
+        "@platforms//cpu:riscv32": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
 bool_flag(
     name = "userspace_build",
     build_setting_default = False,
