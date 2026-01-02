@@ -107,9 +107,7 @@ impl SyscallBuffer {
         // SAFETY: The access right invariant is upheld at buffer creation time
         // where the addr and size fields are validated.
         unsafe {
-            self.addr
-                .byte_add(offset)
-                .copy_to(into_buffer.addr, copy_len);
+            ipc_copy_bytes(into_buffer.addr, self.addr.byte_add(offset), copy_len);
         }
 
         Ok(copy_len)
@@ -119,5 +117,32 @@ impl SyscallBuffer {
     pub fn as_slice(&self) -> &[u8] {
         // Safety: Address and size are checked and validated in `new()`.
         unsafe { core::slice::from_raw_parts(self.addr.as_ptr(), self.size) }
+    }
+}
+
+// Safe-by-construction copy helper for syscall buffers.
+//
+// On ARMv7-M (target_arch = "arm"), avoid compiler_builtins::memcpy for
+// potentially unaligned IPC buffers by doing a simple byte-wise copy. This
+// prevents the compiler from emitting multi-word LDM/STM sequences that can
+// fault on unaligned addresses.
+#[inline(always)]
+unsafe fn ipc_copy_bytes(dst: NonNull<u8>, src: NonNull<u8>, len: usize) {
+    #[cfg(target_arch = "arm")]
+    {
+        let mut i = 0;
+        while i < len {
+            // Perform byte-wise loads/stores so the compiler does not lower
+            // this to a word-wise memcpy with alignment assumptions.
+            let byte = src.as_ptr().add(i).read();
+            dst.as_ptr().add(i).write(byte);
+            i += 1;
+        }
+    }
+
+    #[cfg(not(target_arch = "arm"))]
+    {
+        // For non-ARM targets, keep using the optimized pointer copy.
+        src.copy_to(dst, len);
     }
 }

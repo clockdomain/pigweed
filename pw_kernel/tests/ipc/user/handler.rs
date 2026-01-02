@@ -20,6 +20,23 @@ use userspace::entry;
 use userspace::syscall::{self, Signals};
 use userspace::time::Instant;
 
+/// 4-byte aligned byte buffer to keep ARMv7-M from faulting on
+/// compiler-generated multi-word loads (e.g. LDMIA) over IPC buffers.
+#[repr(C, align(4))]
+struct AlignedBuf<const N: usize> {
+    buf: [u8; N],
+}
+
+impl<const N: usize> AlignedBuf<N> {
+    fn as_bytes(&self) -> &[u8] {
+        &self.buf
+    }
+
+    fn as_bytes_mut(&mut self) -> &mut [u8] {
+        &mut self.buf
+    }
+}
+
 fn handle_uppercase_ipcs() -> Result<()> {
     pw_log::info!("IPC service starting");
     loop {
@@ -27,23 +44,29 @@ fn handle_uppercase_ipcs() -> Result<()> {
         syscall::object_wait(handle::IPC, Signals::READABLE, Instant::MAX)?;
 
         // Read the payload.
-        let mut buffer = [0u8; size_of::<char>()];
-        let len = syscall::channel_read(handle::IPC, 0, &mut buffer)?;
-        if len != size_of::<char>() {
+        const RECV_LEN: usize = size_of::<char>();
+        let mut buffer = AlignedBuf::<RECV_LEN> { buf: [0u8; RECV_LEN] };
+        let len = syscall::channel_read(handle::IPC, 0, buffer.as_bytes_mut())?;
+        if len != RECV_LEN {
             return Err(Error::OutOfRange);
         };
 
         // Convert the payload to a character and make it uppercase.
-        let Some(c) = char::from_u32(u32::from_ne_bytes(buffer)) else {
+        let Some(c) = char::from_u32(u32::from_ne_bytes(buffer.as_bytes().try_into().unwrap())) else {
             return Err(Error::InvalidArgument);
         };
         let upper_c = c.to_ascii_uppercase();
 
         // Respond to the IPC with the uppercase character.
-        let mut response_buffer = [0u8; size_of::<char>() * 2];
-        upper_c.encode_utf8(&mut response_buffer[0..size_of::<char>()]);
-        c.encode_utf8(&mut response_buffer[size_of::<char>()..]);
-        syscall::channel_respond(handle::IPC, &response_buffer)?;
+        const RESP_LEN: usize = size_of::<char>() * 2;
+        let mut response_buffer = AlignedBuf::<RESP_LEN> { buf: [0u8; RESP_LEN] };
+        {
+            let buf = response_buffer.as_bytes_mut();
+            let (first, second) = buf.split_at_mut(size_of::<char>());
+            upper_c.encode_utf8(first);
+            c.encode_utf8(second);
+        }
+        syscall::channel_respond(handle::IPC, response_buffer.as_bytes())?;
     }
 }
 

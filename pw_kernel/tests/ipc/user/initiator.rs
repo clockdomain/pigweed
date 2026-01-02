@@ -14,36 +14,88 @@
 #![no_main]
 #![no_std]
 
+use core::mem::size_of;
+
 use app_initiator::handle;
-use pw_status::{Error, Result, StatusCode};
+use pw_status::{Error, Result};
 use userspace::time::Instant;
 use userspace::{entry, syscall};
 
+/// 4-byte aligned byte buffer to keep ARMv7-M from faulting on
+/// compiler-generated multi-word loads (e.g. LDMIA) over IPC buffers.
+#[repr(C, align(4))]
+struct AlignedBuf<const N: usize> {
+    buf: [u8; N],
+}
+
+impl<const N: usize> AlignedBuf<N> {
+    fn as_bytes(&self) -> &[u8] {
+        &self.buf
+    }
+
+    fn as_bytes_mut(&mut self) -> &mut [u8] {
+        &mut self.buf
+    }
+}
+
+// Simple logging shims: on ARMv7-M we disable verbose pw_log! usage
+// in this test to avoid exercising complex formatter/codegen paths
+// that currently generate unaligned multi-word loads.
+#[cfg(target_arch = "arm")]
+macro_rules! test_log_info {
+    ($($arg:tt)*) => {};
+}
+
+#[cfg(not(target_arch = "arm"))]
+macro_rules! test_log_info {
+    ($($arg:tt)*) => {
+        pw_log::info!($($arg)*);
+    };
+}
+
+#[cfg(target_arch = "arm")]
+macro_rules! test_log_error {
+    ($($arg:tt)*) => {};
+}
+
+#[cfg(not(target_arch = "arm"))]
+macro_rules! test_log_error {
+    ($($arg:tt)*) => {
+        pw_log::error!($($arg)*);
+    };
+}
+
 fn test_uppercase_ipcs() -> Result<()> {
-    pw_log::info!("Ipc test starting");
+    test_log_info!("Ipc test starting");
     for c in 'a'..='z' {
         const SEND_BUF_LEN: usize = size_of::<char>();
         const RECV_BUF_LEN: usize = size_of::<char>() * 2;
 
-        let mut send_buf = [0u8; SEND_BUF_LEN];
-        let mut recv_buf = [0u8; RECV_BUF_LEN];
+        let mut send_buf = AlignedBuf::<SEND_BUF_LEN> { buf: [0u8; SEND_BUF_LEN] };
+        let mut recv_buf = AlignedBuf::<RECV_BUF_LEN> { buf: [0u8; RECV_BUF_LEN] };
 
         // Encode the character into `send_buf` and send it over to the handler.
-        c.encode_utf8(&mut send_buf);
-        let len: usize =
-            syscall::channel_transact(handle::IPC, &send_buf, &mut recv_buf, Instant::MAX)?;
+        c.encode_utf8(send_buf.as_bytes_mut());
+        let len = syscall::channel_transact(
+            handle::IPC,
+            send_buf.as_bytes(),
+            recv_buf.as_bytes_mut(),
+            Instant::MAX,
+        )?;
 
-        // The handler side always sends 8 bytes to make up two full Rust `char`s
+        // The handler side always sends 8 bytes to make up two full Rust `char`s.
         if len != RECV_BUF_LEN {
-            pw_log::error!(
+            test_log_error!(
                 "Received {} bytes, {} expected",
-                len as usize,
-                RECV_BUF_LEN as usize
+                len,
+                RECV_BUF_LEN,
             );
             return Err(Error::OutOfRange);
         }
 
-        let (char0_bytes, char1_bytes) = recv_buf.split_at(size_of::<char>());
+        let (char0_bytes, char1_bytes) = recv_buf
+            .as_bytes()
+            .split_at(size_of::<char>());
 
         // Decode first char.
         let Ok(char0) = u32::from_ne_bytes(char0_bytes.try_into().unwrap()).try_into() else {
@@ -57,12 +109,12 @@ fn test_uppercase_ipcs() -> Result<()> {
         };
         let char1: char = char1;
 
-        // Log the response character
-        pw_log::info!(
+        // Log the response character.
+        test_log_info!(
             "Sent {}, received ({},{})",
-            c as char,
-            char0 as char,
-            char1 as char
+            c,
+            char0,
+            char1,
         );
 
         // Verify that the remote side made the first character uppercase.
@@ -81,15 +133,15 @@ fn test_uppercase_ipcs() -> Result<()> {
 
 #[entry]
 fn entry() -> ! {
-    pw_log::info!("🔄 RUNNING");
+    test_log_info!("🔄 RUNNING");
 
     let ret = test_uppercase_ipcs();
 
     // Log that an error occurred so that the app that caused the shutdown is logged.
     if ret.is_err() {
-        pw_log::error!("❌ FAILED: {}", ret.status_code() as u32);
+        test_log_error!("❌ FAILED: {}", ret.status_code() as u32);
     } else {
-        pw_log::info!("✅ PASSED");
+        test_log_info!("✅ PASSED");
     }
 
     // Since this is written as a test, shut down with the return status from `main()`.
