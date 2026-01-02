@@ -67,13 +67,16 @@ fn validate_and_set_entry_ident(
 pub fn arm_cortex_m_entry(args: TokenStream, input: TokenStream) -> TokenStream {
     let f = validate_and_set_entry_ident(args, input).unwrap();
 
-    let asm = include_str!("arm_cortex_m/entry.s");
+    // NOTE: entry.s is compiled as a separate object file (cc_library)
+    // to prevent Rust/LLVM from generating its own _start symbol.
+    // See: EXPERT_ANALYSIS_Rust_LLVM_Entry_Code.md - Solution A
     quote!(
-        use core::arch::global_asm;
-        global_asm!(#asm, options(raw));
-
+        // DO NOT use global_asm! - entry.s compiled separately
+        // The assembly _start calls main, so just export main
+        
         #[unsafe(no_mangle)]
         #[unsafe(export_name = "main")]
+        #[inline(never)]
         extern "C" #f
     )
     .into()
