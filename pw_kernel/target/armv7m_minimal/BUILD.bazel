@@ -12,15 +12,12 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_library")
 load("//pw_build:merge_flags.bzl", "flags_from_dict")
 load("//pw_kernel:flags.bzl", "KERNEL_DEVICE_COMMON_FLAGS")
-load("//pw_kernel/tooling:system_image.bzl", "system_image", "system_image_test")
-load("//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
-load("//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load(":defs.bzl", "TARGET_COMPATIBLE_WITH")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = [":__subpackages__"])
 
 # Custom constraint for this target
 constraint_value(
@@ -65,75 +62,14 @@ rust_library(
     srcs = ["config.rs"],
     crate_name = "kernel_config",
     edition = "2024",
-    deps = ["//pw_kernel/config:kernel_config_interface"],
-)
-
-# System configuration file
-filegroup(
-    name = "system_config",
-    srcs = ["system.json5"],
-)
-
-# Generate kernel configuration code from system.json5
-target_codegen(
-    name = "codegen",
-    arch = "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
-    system_config = ":system_config",
-    target_compatible_with = TARGET_COMPATIBLE_WITH,
-)
-
-# Linker script template for this target
-filegroup(
-    name = "linker_script_template",
-    srcs = ["target.ld.jinja"],
-)
-
-# Generate linker script for this target
-target_linker_script(
-    name = "linker_script",
-    system_config = ":system_config",
-    tags = ["kernel"],
-    target_compatible_with = TARGET_COMPATIBLE_WITH,
-    template = ":linker_script_template",
-)
-
-# Kernel binary (using generated config)
-rust_binary(
-    name = "kernel_target",
-    srcs = [
-        "target.rs",
-    ],
-    edition = "2024",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        ":codegen",
-        ":entry",
-        ":linker_script",
-        "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
-        "//pw_kernel/kernel",
-        "//pw_kernel/subsys/console:console_backend",
-        "//pw_kernel/target:target_common",
-        "//pw_kernel/userspace",
-        "@rust_crates//:cortex-m-semihosting",
+        "//pw_kernel/config:kernel_config_interface",
     ],
 )
 
-# Complete system image (kernel + all processes)
-system_image(
-    name = "minimal",
-    apps = [
-        "//pw_kernel/target/armv7m_minimal/hello",
-    ],
-    kernel = ":kernel_target",
-    platform = ":armv7m_minimal",  # Use our custom platform
-    system_config = ":system_config",
-    tags = ["kernel"],
-)
-
-# Executable wrapper with target compatibility
-system_image_test(
-    name = "minimal_test",
-    image = ":minimal",
-    target_compatible_with = TARGET_COMPATIBLE_WITH,
+filegroup(
+    name = "linker_script_template",
+    srcs = ["target.ld.jinja"],
 )
