@@ -145,6 +145,10 @@ unsafe fn ipc_copy_bytes(dst: NonNull<u8>, src: NonNull<u8>, len: usize) {
     #[cfg(not(target_arch = "arm"))]
     {
         // For non-ARM targets, keep using the optimized pointer copy.
-        src.copy_to(dst, len);
+        // SAFETY: Caller must ensure src and dst are valid for `len` bytes and
+        // properly aligned. Access rights are validated at SyscallBuffer creation.
+        unsafe {
+            src.copy_to(dst, len);
+        }
     }
 }
