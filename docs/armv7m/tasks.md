@@ -225,6 +225,20 @@ Planning phase should refine and extend this list.
                 instrumentation in place.
 
 7. **AST1030 Target Integration**
+   - [ ] Fix AST1030 target compatibility constraints to prevent cross-platform test execution.
+      - **Issue:** AST1030 tests (e.g., `//pw_kernel/target/ast1030/ipc/user:ipc_test`) run when building with `--config=k_qemu_mps2_an505` because they lack `target_compatible_with` attributes.
+      - **Root cause:** Missing `defs.bzl` file and `target_compatible_with` constraints in AST1030 BUILD files.
+      - **Reference implementation:** See `for-claude/` directory for the correct pattern (ARMv7-M minimal target).
+      - **Required changes:**
+         1. Create `pw_kernel/target/ast1030/defs.bzl` with `TARGET_COMPATIBLE_WITH` select() pattern
+         2. Update `pw_kernel/target/ast1030/BUILD.bazel` to:
+            - Import `TARGET_COMPATIBLE_WITH` from `:defs.bzl`
+            - Add `target_compatible_with = TARGET_COMPATIBLE_WITH` to `:entry` and `:config` libraries
+         3. Update `pw_kernel/target/ast1030/ipc/user/BUILD.bazel` to:
+            - Import `TARGET_COMPATIBLE_WITH`
+            - Add constraints to: `:ipc_test`, `:codegen`, `:linker_script`, `:target`
+         4. Apply same pattern to other AST1030 test targets (interrupts, threads, etc.)
+      - **Verification:** After changes, `bazelisk test --config=k_qemu_mps2_an505 //pw_kernel/...` should NOT run AST1030 tests.
    - [ ] Adapt design for non-XIP execution on AST1030.
    - [ ] Validate MPU layout and system image behavior on hardware.
    - [ ] Capture and link test logs.
