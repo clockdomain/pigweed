@@ -98,6 +98,8 @@ test:k_qemu_mps2_an505 --run_under="//pw_kernel/tooling:qemu \
 
 # QEMU lm3s6965evb target configuration (ARMv7-M / Cortex-M3)
 # =======================================
+# Note: Uses armv7m_minimal platform, which serves as both the LM3S6965
+# QEMU board platform and a reference ARMv7-M platform for generic testing.
 common:k_qemu_lm3s6965 --config=k_common
 common:k_qemu_lm3s6965 --platforms=//pw_kernel/target/armv7m_minimal:armv7m_minimal
 run:k_qemu_lm3s6965 --run_under="//pw_kernel/tooling:qemu \
@@ -108,6 +110,22 @@ run:k_qemu_lm3s6965 --run_under="//pw_kernel/tooling:qemu \
 test:k_qemu_lm3s6965 --run_under="//pw_kernel/tooling:qemu \
   --cpu cortex-m3 \
   --machine lm3s6965evb \
+  --semihosting \
+  --image "
+
+# QEMU AST1030 target configuration (ARMv7-M / Cortex-M4)
+# =======================================
+# Hardware: Aspeed AST1030 BMC SoC (Cortex-M4F)
+common:k_qemu_ast1030 --config=k_common
+common:k_qemu_ast1030 --platforms=//pw_kernel/target/ast1030:ast1030
+run:k_qemu_ast1030 --run_under="//pw_kernel/tooling:qemu \
+  --cpu cortex-m4 \
+  --machine ast1030-evb \
+  --semihosting \
+  --image "
+test:k_qemu_ast1030 --run_under="//pw_kernel/tooling:qemu \
+  --cpu cortex-m4 \
+  --machine ast1030-evb \
   --semihosting \
   --image "
 
