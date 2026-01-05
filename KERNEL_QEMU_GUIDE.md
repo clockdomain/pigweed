@@ -13,8 +13,9 @@ bazelisk build //pw_kernel/kernel:kernel
 The Pigweed kernel supports several target configurations:
 
 - `k_host` - Run on your host machine (Linux, macOS)
-- `k_qemu_mps2_an505` - QEMU emulating Arm Cortex-M33 (MPS2-AN505)
+- `k_qemu_mps2_an505` - QEMU emulating Arm Cortex-M33 (MPS2-AN505) - **ARMv8-M**
 - `k_qemu_lm3s6965` - QEMU emulating Arm Cortex-M3 (LM3S6965EVB) - **ARMv7-M**
+- `k_qemu_ast1030` - QEMU emulating Aspeed AST1030 BMC (Cortex-M4) - **ARMv7-M**
 - `k_qemu_virt_riscv32` - QEMU emulating RISC-V 32-bit system
 - `k_rp2350` - Raspberry Pi RP2350 microcontroller
 
@@ -84,6 +85,68 @@ The threading test verifies:
 
 The test creates two threads that coordinate via a shared counter, demonstrating that the kernel's threading primitives work correctly on the Cortex-M3 architecture.
 
+## AST1030 Tests (Cortex-M4)
+
+The AST1030 platform (Aspeed BMC SoC) provides comprehensive kernel testing on ARMv7-M Cortex-M4.
+
+### Available Tests
+
+#### Threading Test
+```bash
+bazelisk test \
+  --test_output=all \
+  --config=k_qemu_ast1030 \
+  //pw_kernel/target/ast1030/threads/kernel:threads_test
+```
+
+Tests basic thread creation, scheduling, and synchronization.
+
+#### Thread Termination Test
+```bash
+bazelisk test \
+  --test_output=all \
+  --config=k_qemu_ast1030 \
+  //pw_kernel/target/ast1030/thread_termination/kernel:thread_termination_test
+```
+
+Validates thread lifecycle and cleanup in 4 scenarios:
+- **Terminate Sleep**: Thread terminated while sleeping
+- **Signaled Termination**: Thread signaled to exit
+- **Mutex**: Thread terminated while waiting on mutex
+- **Thread Ref Drop**: Reference counting and cleanup
+
+#### IPC Test
+```bash
+bazelisk test \
+  --test_output=all \
+  --config=k_qemu_ast1030 \
+  //pw_kernel/target/ast1030/ipc/user:ipc_test
+```
+
+Tests inter-process communication between user-space processes.
+
+### Force Re-run Without Cache
+
+To force a test to re-run even if cached results exist:
+
+```bash
+bazelisk test \
+  --test_output=all \
+  --cache_test_results=no \
+  --config=k_qemu_ast1030 \
+  //pw_kernel/target/ast1030/thread_termination/kernel:thread_termination_test
+```
+
+### AST1030 Platform Details
+- **CPU**: ARM Cortex-M4F @ 200 MHz
+- **Architecture**: ARMv7-M with PMSAv7
+- **Memory**: 640 KB SRAM (RAM-only execution, no XIP)
+- **MPU**: 8 regions
+- **NVIC**: 64 IRQs
+- **Unique Feature**: ROM bootloader copies firmware from flash to RAM
+
+See [pw_kernel/target/ast1030/README.md](pw_kernel/target/ast1030/README.md) for complete AST1030 documentation.
+
 ## QEMU RISC-V 32-bit
 
 To run the kernel tests on QEMU RISC-V with full output:
@@ -137,11 +200,19 @@ bazelisk test --config k_qemu_mps2_an505 //pw_kernel/...
 - **Platform**: `//pw_kernel/target/armv7m_minimal:armv7m_minimal`
 - **Flash**: 0x00000000 - 0x00020000 (~128KB)
 - **RAM**: 0x20000000 - 0x20008000 (32KB)
-- **MPU**: 8 regions
+- **MPU**: 8 regions (PMSAv7)
+
+### ARMv7-M (Cortex-M4)
+- **Target**: QEMU ast1030-evb (Aspeed AST1030 BMC)
+- **Platform**: `//pw_kernel/target/ast1030:ast1030`
+- **Memory**: 640 KB SRAM (RAM-only, no XIP)
+- **MPU**: 8 regions (PMSAv7)
+- **Vector Table**: 264 vectors (1056 bytes)
 
 ### ARMv8-M (Cortex-M33)
 - **Target**: QEMU mps2-an505
 - **Platform**: `//pw_kernel/target/mps2_an505:mps2_an505`
+- **MPU**: 16 regions (PMSAv8)
 
 ### RISC-V
 - **Target**: QEMU virt (RV32IMAC)
