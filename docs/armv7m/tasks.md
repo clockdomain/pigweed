@@ -29,7 +29,7 @@ Planning phase should refine and extend this list.
    - [ ] Add invariants/checks so bad layouts fail at build time.
 
 4. **MPU Configuration & Safe Update Protocol**
-   - [ ] Define the MPU region layout for armv7m_minimal.
+   - [ ] Define the MPU region layout for lm3s6965.
    - [ ] Implement safe PMSAv7 MPU updates on context switch.
    - [ ] Add focused tests/logging for MPU configuration.
 
@@ -40,13 +40,13 @@ Planning phase should refine and extend this list.
 
 6. **IPC Initiator/Handler Tests**
    - [x] Establish ARMv8-M baseline on mps2_an505 (QEMU); IPC test passes end-to-end.
-   - [ ] Process rule: for every IPC change, first rerun the ARMv8-M mps2_an505 IPC test and confirm it still passes before running the ARMv7-M armv7m_minimal IPC test.
-   - [ ] Bring up IPC tests on armv7m_minimal under QEMU.
-   - [ ] Ensure armv7m_minimal logs match ARMv8-M baseline ("Sent X, received (Y, Z)", "PASSED").
+   - [ ] Process rule: for every IPC change, first rerun the ARMv8-M mps2_an505 IPC test and confirm it still passes before running the ARMv7-M lm3s6965 IPC test.
+   - [ ] Bring up IPC tests on lm3s6965 under QEMU.
+   - [ ] Ensure lm3s6965 logs match ARMv8-M baseline ("Sent X, received (Y, Z)", "PASSED").
    - [ ] Add any ARMv7-M specific diagnostics needed for fault triage.
     - **Commands (current workspace):**
        - Build ARMv7-M minimal IPC image:
-          - `bazelisk build --platforms=//pw_kernel/target/armv7m_minimal:armv7m_minimal //pw_kernel/target/armv7m_minimal/ipc/user:ipc`
+          - `bazelisk build --platforms=//pw_kernel/target/lm3s6965:lm3s6965 //pw_kernel/target/lm3s6965/ipc/user:ipc`
 
    **6.1 Initiator & Handler Alignment & Codegen Fix Plan**
 
@@ -54,22 +54,22 @@ Planning phase should refine and extend this list.
     - Initiator-side fault has been mapped and refactored; initiator tests now use `AlignedBuf` and logging shims.
    - Kernel `SyscallBuffer::copy_into` uses `ipc_copy_bytes` on ARMv7-M to avoid unsafe memcpy codegen; disassembly confirms a byte-wise `ldrb/strb` loop with no `ldm/stm`.
    - Handler-side memcpy fault in `main_handler_1` has been refactored; static inspection of `main_initiator_0`, `main_handler_1`, and the `compiler_builtins::memcpy` implementations confirms that `memcpy` is no longer used on the IPC send/receive path.
-    - Debug/codegen configuration, probe functions, and codegen sanity tests are planned but not yet implemented.
+    - Debug/codegen configuration, probe functions, and codegen sanity tests are planned but not yet implemented. <!-- inclusive-language: ignore -->
 
    This plan is intended to be systematic rather than reactive:
    first fix the debug/codegen configuration, then centralize
    all IPC-related copies through a small set of hardened helpers,
-   and finally lock behavior in with codegen sanity tests.
+   and finally lock behavior in with codegen sanity tests. <!-- inclusive-language: ignore -->
    For Rust in particular, prefer explicit aligned/byte-wise copy
    helpers over relying on C toolchain flags such as `-mstrict-align`.
 
       1. **Get a debuggable, representative ARMv7-M IPC build**
           - [ ] Build the ARMv7-M IPC test target with debug info and predictable codegen:
-             - `bazel build -c dbg --config=armv7m_safe --platforms=//pw_kernel/target/armv7m_minimal:armv7m_minimal //pw_kernel/target/armv7m_minimal/ipc/user:ipc_test`.
+             - `bazel build -c dbg --config=armv7m_safe --platforms=//pw_kernel/target/lm3s6965:lm3s6965 //pw_kernel/target/lm3s6965/ipc/user:ipc_test`.
           - [ ] Ensure the build disables LTO and aggressive inlining for the IPC tests and helpers (via `armv7m_safe` or equivalent), so DWARF is preserved and small probe functions stay intact.
           - [ ] Locate the produced ELF:
              - `find bazel-bin -maxdepth 8 -type f \( -name 'ipc_test' -o -name 'ipc.elf' \) | sort`.
-             - Use `file` and `arm-none-eabi-nm -n` to confirm it contains `main_initiator_0` and `main_handler_1` for armv7m_minimal.
+             - Use `file` and `arm-none-eabi-nm -n` to confirm it contains `main_initiator_0` and `main_handler_1` for lm3s6965.
 
       2. **Map fault PCs and LRs to Rust source**
           - [ ] Run addr2line on the debuggable ELF for both initiator and handler faults:
@@ -109,16 +109,16 @@ Planning phase should refine and extend this list.
 
       5. **Verify and iterate on ARMv7-M runtime behavior**
           - [ ] Rebuild for ARMv7-M with the hardened helpers in place:
-             - `bazelisk build --config=armv7m_safe --platforms=//pw_kernel/target/armv7m_minimal:armv7m_minimal //pw_kernel/target/armv7m_minimal/ipc/user:ipc`.
+             - `bazelisk build --config=armv7m_safe --platforms=//pw_kernel/target/lm3s6965:lm3s6965 //pw_kernel/target/lm3s6965/ipc/user:ipc`.
           - [ ] Run under QEMU:
-             - `timeout 30 qemu-system-arm -M lm3s6965evb -nographic -semihosting -kernel bazel-bin/pw_kernel/target/armv7m_minimal/ipc/user/ipc.elf | tee /tmp/armv7m_ipc_fixed.log`.
+             - `timeout 30 qemu-system-arm -M lm3s6965evb -nographic -semihosting -kernel bazel-bin/pw_kernel/target/lm3s6965/ipc/user/ipc.elf | tee /tmp/armv7m_ipc_fixed.log`.
           - [ ] Detokenize logs:
-             - `python -m pw_tokenizer.detokenize base64 bazel-bin/pw_kernel/target/armv7m_minimal/ipc/user/ipc.elf < /tmp/armv7m_ipc_fixed.log`.
+             - `python -m pw_tokenizer.detokenize base64 bazel-bin/pw_kernel/target/lm3s6965/ipc/user/ipc.elf < /tmp/armv7m_ipc_fixed.log`.
           - [ ] Confirm there are no HardFault/UsageFault/MemManage logs and that the IPC test prints the full "Sent X, received (Y, Z)" sequence and a clear PASS indication, matching the ARMv8-M baseline.
 
-      6. **Add small probe functions and codegen sanity tests**
-          - [ ] Create a small tooling crate/module (e.g. pw_kernel/tooling/alignment_sanity) with minimal Rust functions mirroring initiator/handler IPC buffer access patterns and the hardened helpers.
-          - [ ] Add Bazel targets that build these functions for `armv7m_minimal` (and `mps2_an505` as a control) and emit disassembly via `arm-none-eabi-objdump`.
+      6. **Add small probe functions and codegen sanity tests** <!-- inclusive-language: ignore -->
+          - [ ] Create a small tooling crate/module (e.g. pw_kernel/tooling/alignment_sanity) with minimal Rust functions mirroring initiator/handler IPC buffer access patterns and the hardened helpers. <!-- inclusive-language: ignore -->
+          - [ ] Add Bazel targets that build these functions for `lm3s6965` (and `mps2_an505` as a control) and emit disassembly via `arm-none-eabi-objdump`.
           - [ ] Write a checker (e.g. Python script) that scans the disassembly for risky `ldm`/`stm` usage in the probe functions and fails if unaligned multi-word loads/stores reappear.
           - [ ] Wrap the checker as a `bazel test` target and document the command both here and in the alignment/codegen design doc, so regressions show up as test failures rather than HardFaults under QEMU.
 
@@ -202,7 +202,7 @@ Planning phase should refine and extend this list.
                 (via `nm` / `objdump`).
              - Ensure these lie entirely within RW user regions and do not
                 straddle disabled subregions or boundaries.
-             - If mismatches are found, fix the armv7m_minimal MPU
+             - If mismatches are found, fix the lm3s6965 MPU
                 configuration so user IPC memory is cleanly covered.
 
          7. **Check for “stall without fault” due to WFI / missing interrupts**
@@ -221,7 +221,7 @@ Planning phase should refine and extend this list.
              - If this passes on ARMv7-M, the remaining bug lies in the
                 more complex “char loop + dual-char response” behavior.
              - If it still hangs, the issue is in the basic IPC wiring for
-                armv7m_minimal and should be debugged with the above
+                lm3s6965 and should be debugged with the above
                 instrumentation in place.
 
 7. **AST1030 Target Integration**

@@ -21,15 +21,15 @@ package(default_visibility = [":__subpackages__"])
 
 # Custom constraint for this target
 constraint_value(
-    name = "target_armv7m_minimal",
+    name = "target_lm3s6965",
     constraint_setting = "//pw_kernel/target:target",
 )
 
 # Platform definition with kernel config flag
 platform(
-    name = "armv7m_minimal",
+    name = "lm3s6965",
     constraint_values = [
-        ":target_armv7m_minimal",
+        ":target_lm3s6965",
         "//pw_build/constraints/arm:cortex-m3",
         "@platforms//cpu:armv7-m",
         "@platforms//os:none",

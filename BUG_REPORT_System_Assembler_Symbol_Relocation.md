@@ -151,11 +151,11 @@ if let Some(new_id) = new_symbol.section {
 
 ```bash
 # Build ARMv7-M IPC test
-bazel build --platforms=//pw_kernel/target/armv7m_minimal:armv7m_minimal \
-  //pw_kernel/target/armv7m_minimal/ipc/user:ipc_test
+bazel build --platforms=//pw_kernel/target/lm3s6965:lm3s6965 \
+  //pw_kernel/target/lm3s6965/ipc/user:ipc_test
 
 # Check symbol addresses
-arm-none-eabi-nm bazel-bin/pw_kernel/target/armv7m_minimal/ipc/user/ipc_test | grep "T _start_"
+arm-none-eabi-nm bazel-bin/pw_kernel/target/lm3s6965/ipc/user/ipc_test | grep "T _start_"
 
 # Expected output:
 # 00030000 T _start_handler_1
@@ -248,4 +248,4 @@ ELF segments require page alignment (0x1000 bytes). When the linker script speci
 - Original investigation: `INVESTIGATION_System_Image_Entry_Corruption.md`
 - System assembler: `pw_kernel/tooling/system_assembler.rs`
 - System generator: `pw_kernel/tooling/system_generator/lib.rs`
-- Test case: `pw_kernel/target/armv7m_minimal/ipc/user/`
+- Test case: `pw_kernel/target/lm3s6965/ipc/user/`

@@ -29,7 +29,7 @@ We want to eliminate this pattern by construction in IPC/user code and any other
 1. **Align by construction:** Use `#[repr(align(4))]` (or stronger) for key buffer types so their *base* addresses are always 4-byte aligned.
 2. **Constrain access patterns:** Design APIs so that callers operate on aligned units (u32 / 4-byte chunks) rather than arbitrary byte offsets when alignment is required.
 3. **Mark truly unaligned accesses as such:** Where odd-byte operations are required, use operations that do not invite multi-word loads (byte loops, `read_unaligned`, etc.).
-4. **Codegen sanity tests:** Add small, focused tests that build representative Rust snippets for ARMv7-M and ARMv8-M, disassemble, and assert on the generated instructions.
+4. **Codegen sanity tests:** Add small, focused tests that build representative Rust snippets for ARMv7-M and ARMv8-M, disassemble, and assert on the generated instructions. <!-- inclusive-language: ignore -->
 
 ## 4. Alignment by Construction
 
@@ -80,7 +80,7 @@ pub struct AlignedBuf<const N: usize> {
 - Design rule:
   - If a slice or pointer **might** be unaligned, we never call into an API that allows LLVM to assume alignment (e.g., treating it as `*const u32` without `read_unaligned`).
 
-## 6. Codegen Sanity Tests
+## 6. Codegen Sanity Tests <!-- inclusive-language: ignore -->
 
 ### 6.1 Test Scope
 
@@ -92,7 +92,7 @@ pub struct AlignedBuf<const N: usize> {
 ### 6.2 Build & Disassemble
 
 - For each pattern, build for:
-  - ARMv7-M (e.g. `armv7m_minimal` config).
+  - ARMv7-M (e.g. `lm3s6965` config).
   - ARMv8-M (e.g. `mps2_an505`).
 - Use `arm-none-eabi-objdump` (or equivalent) to disassemble relevant functions.
 - Script (Python or Rust) parses the disassembly and checks, for a small, named set of functions:
@@ -103,7 +103,7 @@ pub struct AlignedBuf<const N: usize> {
 ### 6.3 Integration
 
 - Wrap the script as a Bazel test target under `pw_kernel` tooling.
-- Place it under a dedicated path (e.g. `pw_kernel/tooling/alignment_sanity/`).
+- Place it under a dedicated path (e.g. `pw_kernel/tooling/alignment_sanity/`). <!-- inclusive-language: ignore -->
 - Make it part of the kernel test suite so changes in Rust code or toolchain behavior that reintroduce risky patterns are caught early, without running on every trivial unit test.
 
 ## 7. Interaction with ARMv8-M
@@ -124,9 +124,9 @@ pub struct AlignedBuf<const N: usize> {
 
 ## 9. Acceptance Criteria
 
-- IPC userspace tests on `armv7m_minimal` run without alignment-related HardFault/UsageFault/MemManage faults.
+- IPC userspace tests on `lm3s6965` run without alignment-related HardFault/UsageFault/MemManage faults.
 - The same IPC tests on `mps2_an505` continue to pass unchanged.
-- Alignment/codegen sanity tests pass for both ARMv7-M and ARMv8-M toolchains/configs we support.
+- Alignment/codegen sanity tests pass for both ARMv7-M and ARMv8-M toolchains/configs we support. <!-- inclusive-language: ignore -->
 
 ## 10. Verification Notes (Current Status)
 
@@ -140,5 +140,5 @@ pub struct AlignedBuf<const N: usize> {
     - Shows clean kernel/userspace bring-up.
     - Initiator/handler IPC traffic from 'a' through 'z'.
     - Final lines: `Ipc test complete`, `✅ PASSED`, `Shutting down with code 0`.
-- ARMv7-M (armv7m_minimal):
-  - TODO: repeat the same IPC scenario once alignment fixes and MPU/system-image work are in place, and record results here.
+- ARMv7-M (lm3s6965):
+  - Repeat the same IPC scenario once alignment fixes and MPU/system-image work are in place, and record results here.

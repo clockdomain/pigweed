@@ -12,10 +12,10 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-"""Build definitions for ARMv7-M minimal target."""
+"""Build definitions for LM3S6965 target."""
 
 # Target compatibility pattern - only build when this platform is active
 TARGET_COMPATIBLE_WITH = select({
-    "//pw_kernel/target/armv7m_minimal:target_armv7m_minimal": [],
+    "//pw_kernel/target/lm3s6965:target_lm3s6965": [],
     "//conditions:default": ["@platforms//:incompatible"],
 })

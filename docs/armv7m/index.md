@@ -11,4 +11,4 @@ This directory collects design and status documentation for ARMv7-M (Cortex-M3/M
 - **Work order / task tracking:**
   - [tasks.md](tasks.md)
 
-Over time, new target-specific docs (e.g. `ast1030.md`, `armv7m_minimal.md`) and deeper design notes can be added under this directory.
+Over time, new target-specific docs (e.g. `ast1030.md`, `lm3s6965.md`) and deeper design notes can be added under this directory.

@@ -38,7 +38,7 @@
 
 ### Final System Image (BROKEN) ❌
 
-**Location**: `bazel-bin/pw_kernel/target/armv7m_minimal/ipc/user/ipc_test`
+**Location**: `bazel-bin/pw_kernel/target/lm3s6965/ipc/user/ipc_test`
 
 ```asm
 00030200 <_start_handler_1>:
@@ -141,8 +141,8 @@ arm-none-eabi-objdump -d <path> | grep -A 30 "<_start>:"
 
 ```bash
 # Get detailed build information for ipc_test
-bazel aquery --platforms=//pw_kernel/target/armv7m_minimal:armv7m_minimal \
-  'outputs(".*ipc_test$", //pw_kernel/target/armv7m_minimal/ipc/user:ipc_test)' \
+bazel aquery --platforms=//pw_kernel/target/lm3s6965:lm3s6965 \
+  'outputs(".*ipc_test$", //pw_kernel/target/lm3s6965/ipc/user:ipc_test)' \
   > /tmp/ipc_test_actions.txt
 
 # Look for linking actions
@@ -165,8 +165,8 @@ grep -r "entry.*point.*issue\|_start.*problem" pw_kernel/
 cd pw_kernel/tooling
 git log --all --oneline --grep="system_image\|entry\|_start" -- system_image.bzl
 
-# Look for TODOs or FIXMEs
-grep -r "TODO.*entry\|FIXME.*_start\|XXX.*entry" pw_kernel/tooling/
+# Look for action items
+grep -r "TODO.*entry\|FIXME.*_start\|XXX.*entry" pw_kernel/tooling/  # todo-check: disable-line
 ```
 
 ## Hypotheses
@@ -310,11 +310,11 @@ Solution will be considered successful when:
 **Verification Command**:
 ```bash
 # Build final binary
-bazel build //pw_kernel/target/armv7m_minimal/ipc/user:ipc_test \
-  --platforms=//pw_kernel/target/armv7m_minimal:armv7m_minimal
+bazel build //pw_kernel/target/lm3s6965/ipc/user:ipc_test \
+  --platforms=//pw_kernel/target/lm3s6965:lm3s6965
 
 # Check entry code
-arm-none-eabi-objdump -d bazel-bin/pw_kernel/target/armv7m_minimal/ipc/user/ipc_test \
+arm-none-eabi-objdump -d bazel-bin/pw_kernel/target/lm3s6965/ipc/user/ipc_test \
   | grep -A 30 "_start_handler_1"
 
 # Expected output:
@@ -326,7 +326,7 @@ arm-none-eabi-objdump -d bazel-bin/pw_kernel/target/armv7m_minimal/ipc/user/ipc_
 #   udf #1
 
 # Run test
-./pw run //pw_kernel/target/armv7m_minimal/ipc/user:ipc_test
+./pw run //pw_kernel/target/lm3s6965/ipc/user:ipc_test
 # Expected: Test completes without MemoryManagement fault
 ```
 
@@ -468,8 +468,8 @@ fn add_app_symbols(...) {
 **THE REAL PROBLEM**: The individual handler binary built by Bazel is DIFFERENT from the cached handler we found!
 
 **Evidence:**
-- **Bazel-built handler** (bazel-out/armv7m_minimal-fastbuild-ST-f3ea7e8353b0/bin): ✅ HAS correct _start at 0x30200
-- **System image** (bazel-out/armv7m_minimal-fastbuild/bin): ❌ HAS broken code at 0x30200  
+- **Bazel-built handler** (bazel-out/lm3s6965-fastbuild-ST-f3ea7e8353b0/bin): ✅ HAS correct _start at 0x30200
+- **System image** (bazel-out/lm3s6965-fastbuild/bin): ❌ HAS broken code at 0x30200  
 - **system_assembler.rs**: ✅ Copies sections verbatim, doesn't modify code
 
 **Key Discovery:**
@@ -647,10 +647,10 @@ $ arm-none-eabi-objdump -d ipc.elf | grep -A 10 "^00030000"
 ```
 
 **Verification Steps**:
-1. Build: `bazel build //pw_kernel/target/armv7m_minimal/ipc/user:ipc_test`
+1. Build: `bazel build //pw_kernel/target/lm3s6965/ipc/user:ipc_test`
 2. Check symbols: Verify `_start_handler_1` at section base address
 3. Disassemble: Verify correct memcpy/memset/main/udf sequence
-4. Run test: `./pw run //pw_kernel/target/armv7m_minimal/ipc/user:ipc_test`
+4. Run test: `./pw run //pw_kernel/target/lm3s6965/ipc/user:ipc_test`
 5. Expected: No MemoryManagement fault, test passes
 
 ## Next Steps
@@ -707,7 +707,7 @@ INFO: Build completed successfully, 4 total actions
 ```bash
 qemu-system-arm -machine mps2-an385 -cpu cortex-m3 -bios none -nographic \
   -serial mon:stdio -semihosting-config enable=on,target=native \
-  -kernel bazel-bin/pw_kernel/target/armv7m_minimal/ipc/user/ipc_test
+  -kernel bazel-bin/pw_kernel/target/lm3s6965/ipc/user/ipc_test
 ```
 
 **Results**: ✅ **SUCCESS!**

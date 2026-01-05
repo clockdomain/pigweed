@@ -13,34 +13,30 @@
 # the License.
 
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//pw_kernel/target/armv7m_minimal:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//pw_kernel/target/lm3s6965:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//pw_kernel/tooling:system_image.bzl", "system_image", "system_image_test")
 load("//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 
 system_image(
-    name = "ipc",
-    apps = [
-        "//pw_kernel/tests/ipc/user:initiator",
-        "//pw_kernel/tests/ipc/user:handler",
-    ],
+    name = "threads",
     kernel = ":target",
-    platform = "//pw_kernel/target/armv7m_minimal",
+    platform = "//pw_kernel/target/lm3s6965",
     system_config = ":system_config",
     tags = ["kernel"],
     visibility = ["//visibility:public"],
 )
 
 system_image_test(
-    name = "ipc_test",
-    image = ":ipc",
+    name = "threads_test",
+    image = ":threads",
     target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 
 rust_binary_no_panics_test(
     name = "no_panics_test",
-    binary = ":ipc",
+    binary = ":threads",
     tags = ["kernel"],
 )
 
@@ -60,15 +56,12 @@ target_linker_script(
     name = "linker_script",
     system_config = ":system_config",
     tags = ["kernel"],
-    target_compatible_with = TARGET_COMPATIBLE_WITH,
-    template = "//pw_kernel/target/armv7m_minimal:linker_script_template",
+    template = "//pw_kernel/target/lm3s6965:linker_script_template",
 )
 
 rust_binary(
     name = "target",
-    srcs = [
-        "target.rs",
-    ],
+    srcs = ["target.rs"],
     edition = "2024",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
@@ -79,8 +72,9 @@ rust_binary(
         "//pw_kernel/kernel",
         "//pw_kernel/subsys/console:console_backend",
         "//pw_kernel/target:target_common",
-        "//pw_kernel/target/armv7m_minimal:entry",
-        "//pw_kernel/userspace",
+        "//pw_kernel/target/lm3s6965:config",
+        "//pw_kernel/target/lm3s6965:entry",
+        "//pw_kernel/tests/threads/kernel:threads",
         "//pw_log/rust:pw_log",
         "@rust_crates//:cortex-m-semihosting",
     ],

@@ -98,10 +98,9 @@ test:k_qemu_mps2_an505 --run_under="//pw_kernel/tooling:qemu \
 
 # QEMU lm3s6965evb target configuration (ARMv7-M / Cortex-M3)
 # =======================================
-# Note: Uses armv7m_minimal platform, which serves as both the LM3S6965
-# QEMU board platform and a reference ARMv7-M platform for generic testing.
+# Hardware: TI Stellaris LM3S6965 (Cortex-M3)
 common:k_qemu_lm3s6965 --config=k_common
-common:k_qemu_lm3s6965 --platforms=//pw_kernel/target/armv7m_minimal:armv7m_minimal
+common:k_qemu_lm3s6965 --platforms=//pw_kernel/target/lm3s6965:lm3s6965
 run:k_qemu_lm3s6965 --run_under="//pw_kernel/tooling:qemu \
   --cpu cortex-m3 \
   --machine lm3s6965evb \

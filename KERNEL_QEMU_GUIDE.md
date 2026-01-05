@@ -29,7 +29,7 @@ To run the ARMv7-M threading test on QEMU LM3S6965EVB:
 bazelisk test \
   --test_output=all \
   --config=k_qemu_lm3s6965 \
-  //pw_kernel/target/armv7m_minimal/threads/kernel:threads_test
+  //pw_kernel/target/lm3s6965/threads/kernel:threads_test
 ```
 
 ### Expected Output
@@ -50,7 +50,7 @@ On success, you should see:
 [INF] Thread A: Done
 [INF] ✅ PASSED
 
-//pw_kernel/target/armv7m_minimal/threads/kernel:threads_test  PASSED in 2.9s
+//pw_kernel/target/lm3s6965/threads/kernel:threads_test  PASSED in 2.9s
 ```
 
 ### Troubleshooting: CIPD Toolchain Timeout
@@ -69,7 +69,7 @@ bazelisk test \
   --experimental_repository_downloader_retries=10 \
   --test_output=all \
   --config=k_qemu_lm3s6965 \
-  //pw_kernel/target/armv7m_minimal/threads/kernel:threads_test
+  //pw_kernel/target/lm3s6965/threads/kernel:threads_test
 ```
 
 This gives the download ~100 minutes instead of ~10 minutes. After the first successful build, the toolchain is cached and subsequent builds are much faster.
@@ -197,7 +197,7 @@ bazelisk test --config k_qemu_mps2_an505 //pw_kernel/...
 
 ### ARMv7-M (Cortex-M3)
 - **Target**: QEMU lm3s6965evb (TI Stellaris LM3S6965)
-- **Platform**: `//pw_kernel/target/armv7m_minimal:armv7m_minimal`
+- **Platform**: `//pw_kernel/target/lm3s6965:lm3s6965`
 - **Flash**: 0x00000000 - 0x00020000 (~128KB)
 - **RAM**: 0x20000000 - 0x20008000 (32KB)
 - **MPU**: 8 regions (PMSAv7)
