@@ -15,6 +15,7 @@
 load("@rules_rust//rust:defs.bzl", "rust_library")
 load("//pw_build:merge_flags.bzl", "flags_from_dict")
 load("//pw_kernel:flags.bzl", "KERNEL_DEVICE_COMMON_FLAGS")
+load(":defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -48,6 +49,7 @@ rust_library(
     srcs = ["entry.rs"],
     edition = "2024",
     tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "//pw_kernel/kernel",
@@ -61,6 +63,8 @@ rust_library(
     srcs = ["config.rs"],
     crate_name = "kernel_config",
     edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = ["//pw_kernel/config:kernel_config_interface"],
 )
 

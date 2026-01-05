@@ -13,6 +13,7 @@
 # the License.
 
 load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//pw_kernel/target/ast1030:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//pw_kernel/tooling:system_image.bzl", "system_image", "system_image_test")
 load("//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
@@ -34,6 +35,7 @@ system_image(
 system_image_test(
     name = "ipc_test",
     image = ":ipc",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 
 rust_binary_no_panics_test(
@@ -51,12 +53,14 @@ target_codegen(
     name = "codegen",
     arch = "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
     system_config = ":system_config",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 
 target_linker_script(
     name = "linker_script",
     system_config = ":system_config",
     tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
     template = "//pw_kernel/target/ast1030:linker_script_template",
 )
 
@@ -67,6 +71,7 @@ rust_binary(
     ],
     edition = "2024",
     tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":codegen",
         ":linker_script",
