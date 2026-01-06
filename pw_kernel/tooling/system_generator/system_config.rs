@@ -53,6 +53,20 @@ pub struct Armv8MNvicConfig {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct Armv7MConfig {
+    #[serde(flatten)]
+    pub nvic: Armv7MNvicConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Armv7MNvicConfig {
+    pub vector_table_start_address: u64,
+    pub vector_table_size_bytes: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RiscVConfig;
 
 #[derive(Debug, Deserialize, Serialize)]

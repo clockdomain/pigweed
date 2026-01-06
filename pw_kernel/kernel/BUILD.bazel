@@ -51,6 +51,7 @@ rust_library(
     ],
     crate_features = ["user_space"] + select({
         "@platforms//cpu:armv8-m": ["arch_arm_cortex_m"],
+        "@platforms//cpu:armv7-m": ["arch_arm_cortex_m"],
         "@platforms//cpu:riscv32": ["arch_riscv"],
         "//conditions:default": [
             "arch_host",
@@ -62,6 +63,7 @@ rust_library(
         "@rust_crates//:paste",
     ] + select({
         "@platforms//cpu:armv8-m": ["//pw_kernel/macros:arm_cortex_m_macro"],
+        "@platforms//cpu:armv7-m": ["//pw_kernel/macros:arm_cortex_m_macro"],
         "@platforms//cpu:riscv32": ["//pw_kernel/macros:riscv_macro"],
         "//conditions:default": [],
     }),
@@ -85,6 +87,7 @@ rust_library(
         "@rust_crates//:bitflags",
     ] + select({
         "@platforms//cpu:armv8-m": CORTEX_M_DEPS,
+        "@platforms//cpu:armv7-m": CORTEX_M_DEPS,
         "@platforms//cpu:riscv32": RISCV_DEPS,
         "//conditions:default": [],
     }),

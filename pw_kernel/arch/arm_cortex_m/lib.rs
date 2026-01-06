@@ -21,15 +21,23 @@ use pw_log::info;
 
 mod exceptions;
 mod nvic;
-mod protection;
 mod regs;
 mod spinlock;
 mod syscall;
 mod threads;
 mod timer;
 
-// Re-exports to conform to simplify public API.
-pub use protection::MemoryConfig;
+// Architecture-specific protection modules
+#[cfg(feature = "mpu_v7")]
+#[path = "protection_v7.rs"]
+mod protection_impl;
+
+#[cfg(feature = "mpu_v8")]
+#[path = "protection_v8.rs"]
+mod protection_impl;
+
+// Re-export the selected protection implementation
+pub use protection_impl::{MemoryConfig, init as protection_init};
 pub use spinlock::BareSpinLock;
 pub use threads::ArchThreadState;
 
