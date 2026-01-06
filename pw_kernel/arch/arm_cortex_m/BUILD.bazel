@@ -38,8 +38,8 @@ rust_library(
         "timer.rs",
     ],
     crate_features = ["user_space"] + select({
-        "@platforms//cpu:armv8-m": ["mpu_v8"],
         "@platforms//cpu:armv7-m": ["mpu_v7"],
+        "@platforms//cpu:armv8-m": ["mpu_v8"],
         "//conditions:default": [],
     }),
     edition = "2024",
@@ -50,8 +50,8 @@ rust_library(
     rustc_flags = KERNEL_TEST_RUSTC_FLAGS,
     tags = ["kernel"],
     target_compatible_with = select({
-        "@platforms//cpu:armv8-m": [],
         "@platforms//cpu:armv7-m": [],
+        "@platforms//cpu:armv8-m": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
