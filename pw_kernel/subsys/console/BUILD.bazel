@@ -40,16 +40,16 @@ rust_library(
     name = "console_backend_semihosting",
     srcs = ["console_backend_semihosting.rs"],
     crate_features = select({
-        "@platforms//cpu:armv8-m": ["arch_arm_cortex_m"],
         "@platforms//cpu:armv7-m": ["arch_arm_cortex_m"],
+        "@platforms//cpu:armv8-m": ["arch_arm_cortex_m"],
         "@platforms//cpu:riscv32": ["arch_riscv"],
         "//conditions:default": [],
     }),
     crate_name = "console_backend",
     edition = "2024",
     target_compatible_with = select({
-        "@platforms//cpu:armv8-m": [],
         "@platforms//cpu:armv7-m": [],
+        "@platforms//cpu:armv8-m": [],
         "@platforms//cpu:riscv32": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -57,8 +57,8 @@ rust_library(
     deps = [
         "//pw_status/rust:pw_status",
     ] + select({
-        "@platforms//cpu:armv8-m": ["@rust_crates//:cortex-m-semihosting"],
         "@platforms//cpu:armv7-m": ["@rust_crates//:cortex-m-semihosting"],
+        "@platforms//cpu:armv8-m": ["@rust_crates//:cortex-m-semihosting"],
         "@platforms//cpu:riscv32": ["@rust_crates//:riscv-semihosting"],
         "//conditions:default": [],
     }),
