@@ -24,7 +24,8 @@ rust_library(
         "features.rs",
         "lib.rs",
         "nvic.rs",
-        "protection.rs",
+        "protection_v7.rs",
+        "protection_v8.rs",
         "regs.rs",
         "regs/mpu.rs",
         "regs/msr.rs",
@@ -36,7 +37,11 @@ rust_library(
         "threads.rs",
         "timer.rs",
     ],
-    crate_features = ["user_space"],
+    crate_features = ["user_space"] + select({
+        "@platforms//cpu:armv8-m": ["mpu_v8"],
+        "@platforms//cpu:armv7-m": ["mpu_v7"],
+        "//conditions:default": [],
+    }),
     edition = "2024",
     proc_macro_deps = [
         "//pw_kernel/macros:arm_cortex_m_macro",
@@ -46,6 +51,7 @@ rust_library(
     tags = ["kernel"],
     target_compatible_with = select({
         "@platforms//cpu:armv8-m": [],
+        "@platforms//cpu:armv7-m": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
@@ -74,6 +80,8 @@ rust_doc(
         "--document-private-items",
         "--cfg=feature=\"user_space\"",
         "--cfg=feature=\"arch_arm_cortex_m\"",
+        # Document with PMSAv8 by default (ARMv8-M)
+        "--cfg=feature=\"mpu_v8\"",
     ],
     tags = ["kernel"],
 )
