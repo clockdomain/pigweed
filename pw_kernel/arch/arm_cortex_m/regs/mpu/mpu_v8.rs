@@ -31,6 +31,18 @@ pub enum RbarAp {
     RoAny = 0b11,
 }
 
+impl RbarAp {
+    /// Convert a 2-bit field value to the corresponding access permission.
+    pub const fn from_bits(bits: u8) -> Self {
+        match bits & 0b11 {
+            0b00 => Self::RwPrivileged,
+            0b01 => Self::RwAny,
+            0b10 => Self::RoPrivileged,
+            _ => Self::RoAny, // 0b11
+        }
+    }
+}
+
 /// PMSAv8 shareability for RBAR
 #[repr(u8)]
 pub enum RbarSh {
@@ -38,6 +50,18 @@ pub enum RbarSh {
     Reserved = 0b01,
     OuterShareable = 0b10,
     InnerShareable = 0b11,
+}
+
+impl RbarSh {
+    /// Convert a 2-bit field value to the corresponding shareability.
+    pub const fn from_bits(bits: u8) -> Self {
+        match bits & 0b11 {
+            0b00 => Self::NonShareable,
+            0b01 => Self::Reserved,
+            0b10 => Self::OuterShareable,
+            _ => Self::InnerShareable, // 0b11
+        }
+    }
 }
 
 /// PMSAv8 Region Base Address Register value
@@ -56,11 +80,8 @@ impl RbarVal {
     /// Extract access permissions field.
     #[must_use]
     pub const fn ap(&self) -> RbarAp {
-        // Safety: Value is masked to only contain valid enum values.
         #[expect(clippy::cast_possible_truncation)]
-        unsafe {
-            core::mem::transmute(ops::get_u32(self.0, 1, 2) as u8)
-        }
+        RbarAp::from_bits(ops::get_u32(self.0, 1, 2) as u8)
     }
 
     /// Update access permissions field.
@@ -72,11 +93,8 @@ impl RbarVal {
     /// Extract shareability field.
     #[must_use]
     pub const fn sh(&self) -> RbarSh {
-        // Safety: Value is masked to only contain valid enum values.
         #[expect(clippy::cast_possible_truncation)]
-        unsafe {
-            core::mem::transmute(ops::get_u32(self.0, 3, 4) as u8)
-        }
+        RbarSh::from_bits(ops::get_u32(self.0, 3, 4) as u8)
     }
 
     /// Update shareability field.

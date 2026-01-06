@@ -41,6 +41,7 @@ impl RbarVal {
     }
 
     /// Update region field.
+    #[must_use]
     pub const fn with_region(self, val: u8) -> Self {
         Self(ops::set_u32(self.0, 0, 3, val as u32))
     }
@@ -67,6 +68,22 @@ pub enum RasrAp {
     RoPrivileged2 = 0b101,
     RoAny = 0b110,
     RoAny2 = 0b111,
+}
+
+impl RasrAp {
+    /// Convert a 3-bit field value to the corresponding access permission.
+    pub const fn from_bits(bits: u8) -> Self {
+        match bits & 0b111 {
+            0b000 => Self::NoAccess,
+            0b001 => Self::RwPrivileged,
+            0b010 => Self::RoPrivileged,
+            0b011 => Self::RwAny,
+            0b100 => Self::Reserved1,
+            0b101 => Self::RoPrivileged2,
+            0b110 => Self::RoAny,
+            _ => Self::RoAny2, // 0b111
+        }
+    }
 }
 
 /// PMSAv7 TEX/S/C/B memory attribute combinations
@@ -108,6 +125,7 @@ impl RasrVal {
     }
 
     /// Update region size field.
+    #[must_use]
     pub const fn with_size(self, val: u8) -> Self {
         Self(ops::set_u32(self.0, 1, 5, val as u32))
     }
@@ -119,6 +137,7 @@ impl RasrVal {
     }
 
     /// Update sub-region disable field.
+    #[must_use]
     pub const fn with_srd(self, val: u8) -> Self {
         Self(ops::set_u32(self.0, 8, 15, val as u32))
     }
@@ -134,20 +153,20 @@ impl RasrVal {
     }
 
     /// Update TEX field.
+    #[must_use]
     pub const fn with_tex(self, val: u8) -> Self {
         Self(ops::set_u32(self.0, 19, 21, val as u32))
     }
 
     /// Extract access permissions field.
+    #[must_use]
     pub const fn ap(&self) -> RasrAp {
-        // Safety: Value is masked to only contain valid enum values.
         #[expect(clippy::cast_possible_truncation)]
-        unsafe {
-            core::mem::transmute(ops::get_u32(self.0, 24, 26) as u8)
-        }
+        RasrAp::from_bits(ops::get_u32(self.0, 24, 26) as u8)
     }
 
     /// Update access permissions field.
+    #[must_use]
     pub const fn with_ap(self, val: RasrAp) -> Self {
         Self(ops::set_u32(self.0, 24, 26, val as u32))
     }
