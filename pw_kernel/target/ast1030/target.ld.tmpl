@@ -14,12 +14,16 @@
  * the License.
  */
 
-/* This relatively simplified linker script will work with many ARMv7-M and
- * ARMv8-M cores that have on-board memory-mapped RAM and FLASH. For more
- * complex projects and devices, it's possible this linker script will not be
- * sufficient as-is.
+/* Linker script for ASPEED AST1030 (ARMv7-M / Cortex-M4)
  *
- * This linker script is likely not suitable for a project with a bootloader.
+ * The AST1030 is a RAM-based (non-XIP) target. Unlike flash-based targets,
+ * all code and data reside in SRAM. The memory regions are:
+ *   - VECTOR_TABLE: Vector table at start of SRAM (0x00000000)
+ *   - FLASH: Code section in SRAM (named "FLASH" for linker compatibility)
+ *   - RAM: Data section in SRAM (after code)
+ *
+ * This linker script is compatible with both XIP and non-XIP configurations
+ * because it uses template variables for addresses and sizes.
  */
 
 /* Note: This technically doesn't set the firmware's entry point. Setting the
