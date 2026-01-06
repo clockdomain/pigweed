@@ -29,13 +29,20 @@ pub struct Mpu {
     /// Region Base Address Register
     pub rbar: Rbar,
 
-    /// Region Limit Address Register.
+    /// Region Limit Address Register (PMSAv8 only)
+    #[cfg(feature = "mpu_v8")]
     pub rlar: Rlar,
 
-    /// Memory Attribute Indirection Register 0
+    /// Region Attribute and Size Register (PMSAv7 only)
+    #[cfg(feature = "mpu_v7")]
+    pub rasr: Rasr,
+
+    /// Memory Attribute Indirection Register 0 (PMSAv8 only)
+    #[cfg(feature = "mpu_v8")]
     pub mair0: Mair0,
 
-    /// Memory Attribute Indirection Register 1
+    /// Memory Attribute Indirection Register 1 (PMSAv8 only)
+    #[cfg(feature = "mpu_v8")]
     pub mair1: Mair1,
 }
 
@@ -46,8 +53,13 @@ impl Mpu {
             ctrl: Ctrl,
             rnr: Rnr,
             rbar: Rbar,
+            #[cfg(feature = "mpu_v8")]
             rlar: Rlar,
+            #[cfg(feature = "mpu_v7")]
+            rasr: Rasr,
+            #[cfg(feature = "mpu_v8")]
             mair0: Mair0,
+            #[cfg(feature = "mpu_v8")]
             mair1: Mair1,
         }
     }
@@ -78,6 +90,8 @@ impl RnrVal {
 }
 rw_reg!(Rnr, RnrVal, u32, 0xe000ed98, "MPU Region Number Register");
 
+// PMSAv8 specific enums and RBAR
+#[cfg(feature = "mpu_v8")]
 #[repr(u8)]
 pub enum RbarAp {
     RwPrivileged = 0b00,
@@ -86,6 +100,7 @@ pub enum RbarAp {
     RoAny = 0b11,
 }
 
+#[cfg(feature = "mpu_v8")]
 #[repr(u8)]
 pub enum RbarSh {
     NonShareable = 0b00,
@@ -94,9 +109,12 @@ pub enum RbarSh {
     InnerShareable = 0b11,
 }
 
+#[cfg(feature = "mpu_v8")]
 #[derive(Copy, Clone, Default)]
 #[repr(transparent)]
 pub struct RbarVal(pub u32);
+
+#[cfg(feature = "mpu_v8")]
 impl RbarVal {
     #[must_use]
     pub const fn const_default() -> Self {
@@ -139,17 +157,59 @@ impl RbarVal {
 
     rw_masked_field!(base, 0xffff_ffe0, u32, "base address");
 }
+
+#[cfg(feature = "mpu_v8")]
 rw_reg!(
     Rbar,
     RbarVal,
     u32,
     0xe000ed9c,
-    "MPU Region Base Address Register"
+    "MPU Region Base Address Register (PMSAv8)"
 );
 
+// PMSAv7 RBAR
+#[cfg(feature = "mpu_v7")]
+#[derive(Copy, Clone, Default)]
+#[repr(transparent)]
+pub struct RbarVal(pub u32);
+
+#[cfg(feature = "mpu_v7")]
+impl RbarVal {
+    pub const fn const_default() -> Self {
+        Self(0)
+    }
+
+    rw_bool_field!(u32, valid, 4, "MPU region number valid");
+
+    /// Extract region field (used when VALID bit is set).
+    pub const fn region(&self) -> u8 {
+        #[expect(clippy::cast_possible_truncation)]
+        (ops::get_u32(self.0, 0, 3) as u8)
+    }
+
+    /// Update region field.
+    pub const fn with_region(self, val: u8) -> Self {
+        Self(ops::set_u32(self.0, 0, 3, val as u32))
+    }
+
+    rw_masked_field!(addr, 0xffff_ffe0, u32, "region base address");
+}
+
+#[cfg(feature = "mpu_v7")]
+rw_reg!(
+    Rbar,
+    RbarVal,
+    u32,
+    0xe000ed9c,
+    "MPU Region Base Address Register (PMSAv7)"
+);
+
+#[cfg(feature = "mpu_v8")]
 #[derive(Copy, Clone, Default)]
 #[repr(transparent)]
 pub struct RlarVal(pub u32);
+
+#[cfg(feature = "mpu_v8")]
 impl RlarVal {
     #[must_use]
     pub const fn const_default() -> Self {
@@ -161,14 +221,128 @@ impl RlarVal {
     rw_bool_field!(u32, pxn, 4, "privileged execute-never");
     rw_masked_field!(limit, 0xffff_ffe0, u32, "limit address");
 }
+
+#[cfg(feature = "mpu_v8")]
 rw_reg!(
     Rlar,
     RlarVal,
     u32,
     0xe000eda0,
-    "MPU Region Limit Address Register"
+    "MPU Region Limit Address Register (PMSAv8)"
 );
 
+// PMSAv7 Region Attribute and Size Register
+#[cfg(feature = "mpu_v7")]
+#[repr(u8)]
+pub enum RasrAp {
+    NoAccess = 0b000,
+    RwPrivileged = 0b001,
+    RoPrivileged = 0b010,
+    RwAny = 0b011,
+    Reserved1 = 0b100,
+    RoPrivileged2 = 0b101,
+    RoAny = 0b110,
+    RoAny2 = 0b111,
+}
+
+#[cfg(feature = "mpu_v7")]
+#[repr(u8)]
+pub enum RasrTexScb {
+    /// Strongly-ordered, shareable
+    StronglyOrdered = 0b00000,
+    /// Device, shareable
+    Device = 0b00001,
+    /// Normal, write-through, no write allocate
+    NormalWriteThrough = 0b00010,
+    /// Normal, write-back, no write allocate
+    NormalWriteBack = 0b00011,
+    /// Normal, non-cacheable
+    NormalNonCacheable = 0b01000,
+    /// Normal, write-back, write and read allocate
+    NormalWriteBackAllocate = 0b01011,
+    /// Device, not shareable
+    DeviceNonShareable = 0b10000,
+}
+
+#[cfg(feature = "mpu_v7")]
+#[derive(Copy, Clone, Default)]
+#[repr(transparent)]
+pub struct RasrVal(pub u32);
+
+#[cfg(feature = "mpu_v7")]
+impl RasrVal {
+    pub const fn const_default() -> Self {
+        Self(0)
+    }
+
+    rw_bool_field!(u32, enable, 0, "region enable");
+    
+    /// Extract region size field (SIZE).
+    /// Region size is 2^(SIZE+1) bytes, so SIZE=4 means 32 bytes, SIZE=31 means 4GB.
+    pub const fn size(&self) -> u8 {
+        #[expect(clippy::cast_possible_truncation)]
+        (ops::get_u32(self.0, 1, 5) as u8)
+    }
+
+    /// Update region size field.
+    pub const fn with_size(self, val: u8) -> Self {
+        Self(ops::set_u32(self.0, 1, 5, val as u32))
+    }
+
+    /// Extract sub-region disable field (SRD).
+    pub const fn srd(&self) -> u8 {
+        #[expect(clippy::cast_possible_truncation)]
+        (ops::get_u32(self.0, 8, 15) as u8)
+    }
+
+    /// Update sub-region disable field.
+    pub const fn with_srd(self, val: u8) -> Self {
+        Self(ops::set_u32(self.0, 8, 15, val as u32))
+    }
+
+    rw_bool_field!(u32, b, 16, "bufferable");
+    rw_bool_field!(u32, c, 17, "cacheable");
+    rw_bool_field!(u32, s, 18, "shareable");
+
+    /// Extract TEX (Type Extension) field.
+    pub const fn tex(&self) -> u8 {
+        #[expect(clippy::cast_possible_truncation)]
+        (ops::get_u32(self.0, 19, 21) as u8)
+    }
+
+    /// Update TEX field.
+    pub const fn with_tex(self, val: u8) -> Self {
+        Self(ops::set_u32(self.0, 19, 21, val as u32))
+    }
+
+    /// Extract access permissions field.
+    pub const fn ap(&self) -> RasrAp {
+        // Safety: Value is masked to only contain valid enum values.
+        #[expect(clippy::cast_possible_truncation)]
+        unsafe {
+            core::mem::transmute(ops::get_u32(self.0, 24, 26) as u8)
+        }
+    }
+
+    /// Update access permissions field.
+    pub const fn with_ap(self, val: RasrAp) -> Self {
+        Self(ops::set_u32(self.0, 24, 26, val as u32))
+    }
+
+    rw_bool_field!(u32, xn, 28, "execute-never");
+}
+
+#[cfg(feature = "mpu_v7")]
+rw_reg!(
+    Rasr,
+    RasrVal,
+    u32,
+    0xe000eda0,
+    "MPU Region Attribute and Size Register (PMSAv7)"
+);
+
+// PMSAv8 Memory Attribute Indirection Registers
+#[cfg(feature = "mpu_v8")]
 #[repr(u8)]
 pub enum MairDeviceMemoryOrdering {
     /// non-Gathering, non-Reordering, no Early Write acknowledgement.
@@ -188,6 +362,7 @@ pub enum MairDeviceMemoryOrdering {
     GRE = 0b11,
 }
 
+#[cfg(feature = "mpu_v8")]
 #[repr(u8)]
 pub enum MairNormalMemoryCaching {
     /// Write-Through Transient Write Only
@@ -235,8 +410,10 @@ pub enum MairNormalMemoryCaching {
 ///  There are notably no accessors for `MairAttr` because it's unclear
 /// how they would be used at this time and therefore difficult to build
 /// them for optimal code gen.
+#[cfg(feature = "mpu_v8")]
 pub struct MairAttr(u8);
 
+#[cfg(feature = "mpu_v8")]
 impl MairAttr {
     #[must_use]
     pub const fn device_memory(ordering: MairDeviceMemoryOrdering) -> Self {
@@ -263,6 +440,7 @@ impl MairAttr {
     }
 }
 
+#[cfg(feature = "mpu_v8")]
 macro_rules! attr_field {
     ($name:ident, $start:literal, $end:literal, $desc:literal) => {
         #[doc = "Extract "]
@@ -284,15 +462,20 @@ macro_rules! attr_field {
     };
 }
 
+#[cfg(feature = "mpu_v8")]
 #[derive(Default)]
 #[repr(transparent)]
 pub struct Mair0Val(u32);
+
+#[cfg(feature = "mpu_v8")]
 impl Mair0Val {
     attr_field!(attr0, 0, 7, "Attribute 0");
     attr_field!(attr1, 8, 15, "Attribute 1");
     attr_field!(attr2, 16, 23, "Attribute 2");
     attr_field!(attr3, 24, 31, "Attribute 3");
 }
+
+#[cfg(feature = "mpu_v8")]
 rw_reg!(
     Mair0,
     Mair0Val,
@@ -301,14 +484,19 @@ rw_reg!(
     "MPU Memory Attribute Indirection Register 0"
 );
 
+#[cfg(feature = "mpu_v8")]
 #[repr(transparent)]
 pub struct Mair1Val(u32);
+
+#[cfg(feature = "mpu_v8")]
 impl Mair1Val {
     attr_field!(attr4, 0, 7, "Attribute 4");
     attr_field!(attr5, 8, 15, "Attribute 5");
     attr_field!(attr6, 16, 23, "Attribute 6");
     attr_field!(attr7, 24, 31, "Attribute 7");
 }
+
+#[cfg(feature = "mpu_v8")]
 rw_reg!(
     Mair1,
     Mair1Val,

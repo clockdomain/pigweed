@@ -96,6 +96,21 @@ test:k_qemu_mps2_an505 --run_under="//pw_kernel/tooling:qemu \
   --semihosting \
   --image "
 
+# QEMU AST1030 target configuration (ARMv7-M / Cortex-M4)
+# =======================================
+common:k_qemu_ast1030 --config=k_common
+common:k_qemu_ast1030 --platforms=//pw_kernel/target/ast1030:ast1030
+run:k_qemu_ast1030 --run_under="//pw_kernel/tooling:qemu \
+  --cpu cortex-m4 \
+  --machine ast1030-evb \
+  --semihosting \
+  --image "
+test:k_qemu_ast1030 --run_under="//pw_kernel/tooling:qemu \
+  --cpu cortex-m4 \
+  --machine ast1030-evb \
+  --semihosting \
+  --image "
+
 # QEMU virt riscv32 target configuration
 # =======================================
 common:k_qemu_virt_riscv32 --config=k_common
