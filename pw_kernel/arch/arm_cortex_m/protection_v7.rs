@@ -149,13 +149,8 @@ impl MpuRegion {
         // For very large regions (like kernel's full address space), use maximum size
         const MAX_REGION_SIZE: usize = 0x8000_0000; // 2GB, SIZE=30
 
-        if requested_size >= MAX_REGION_SIZE {
-            // Use maximum region size with no sub-regions disabled
-            return AlignedRegion {
-                base: 0,
-                size_field: 30, // 2GB = 2^31, SIZE = 31-1 = 30
-                srd_mask: 0,
-            };
+        if requested_size > MAX_REGION_SIZE {
+            panic!("Requested memory region size exceeds PMSAv7 limits");
         }
 
         // Find the smallest power-of-2 region that can cover the requested range
@@ -164,12 +159,7 @@ impl MpuRegion {
         while region_size < requested_size {
             region_size *= 2;
             if region_size > MAX_REGION_SIZE {
-                // Fall back to max size
-                return AlignedRegion {
-                    base: 0,
-                    size_field: 30,
-                    srd_mask: 0,
-                };
+                panic!("Requested memory region requires alignment/size exceeding PMSAv7 limits");
             }
         }
 
@@ -184,12 +174,7 @@ impl MpuRegion {
             aligned_base = start & !(region_size - 1);
 
             if region_size > MAX_REGION_SIZE {
-                // Fall back to max size at base 0
-                return AlignedRegion {
-                    base: 0,
-                    size_field: 30,
-                    srd_mask: 0,
-                };
+                panic!("Requested memory region requires alignment/size exceeding PMSAv7 limits");
             }
         }
 
@@ -322,10 +307,13 @@ pub fn init() {
 }
 
 impl memory_config::MemoryConfig for MemoryConfig {
+    // We limit the kernel region to 2GB (0x8000_0000) to satisfy the PMSAv7 implementation's
+    // MAX_REGION_SIZE constraint. This covers the typical Flash/RAM/Peripheral range
+    // for Cortex-M devices.
     const KERNEL_THREAD_MEMORY_CONFIG: Self = Self::const_new(&[MemoryRegion::new(
         MemoryRegionType::ReadWriteExecutable,
         0x0000_0000,
-        0xffff_ffff,
+        0x8000_0000,
     )]);
 
     fn range_has_access(
