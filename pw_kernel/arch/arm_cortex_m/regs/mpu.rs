@@ -276,7 +276,7 @@ impl RasrVal {
     }
 
     rw_bool_field!(u32, enable, 0, "region enable");
-    
+
     /// Extract region size field (SIZE).
     /// Region size is 2^(SIZE+1) bytes, so SIZE=4 means 32 bytes, SIZE=31 means 4GB.
     pub const fn size(&self) -> u8 {

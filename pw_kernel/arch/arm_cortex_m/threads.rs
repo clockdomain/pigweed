@@ -32,11 +32,10 @@ use crate::exceptions::{
     ExcReturn, ExcReturnFrameType, ExcReturnMode, ExcReturnRegisterStacking, ExcReturnStack,
     ExceptionFrame, KernelExceptionFrame, RetPsrVal, exception,
 };
-use crate::MemoryConfig;
 use crate::regs::Regs;
 use crate::regs::msr::{ControlVal, Spsel};
 use crate::spinlock::BareSpinLock;
-use crate::{in_interrupt_handler, nvic};
+use crate::{MemoryConfig, in_interrupt_handler, nvic};
 
 const LOG_THREAD_CREATE: bool = false;
 const LOG_CONTEXT_SWITCH: bool = false;
