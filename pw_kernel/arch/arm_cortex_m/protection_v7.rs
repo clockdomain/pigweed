@@ -186,6 +186,49 @@ impl MpuRegion {
         let subregion_size = region_size / 8;
         let mut srd_mask: u8 = 0;
 
+        // SECURITY WARNING: Sub-region over-provisioning
+        // ===============================================
+        // This implementation has a known security trade-off: it grants access to entire
+        // sub-regions if they have ANY overlap with the requested range. This means up to
+        // (region_size / 8) - 1 bytes can be accessible beyond the requested boundaries.
+        //
+        // EXAMPLE:
+        //   Requested range: [0x1000, 0x1100) - 256 bytes
+        //   Aligned region:  [0x1000, 0x1800) - 2KB (power-of-2 requirement)
+        //   Sub-region size: 256 bytes (2KB / 8)
+        //   Sub-region 1:    [0x1100, 0x1300) - starts at requested end
+        //   Result: Sub-region 1 is FULLY enabled, exposing [0x1100, 0x1300)
+        //           This grants 512 bytes of unintended access beyond 0x1100
+        //
+        // ROOT CAUSE - PMSAv7 Hardware Constraints:
+        //   1. Regions must be power-of-2 sized (32B to 4GB)
+        //   2. Region base must be aligned to region size
+        //   3. Each region has exactly 8 sub-regions (all equal size)
+        //   4. Sub-regions can only be fully enabled or fully disabled (no partial)
+        //   5. Only 8 MPU regions available system-wide
+        //
+        // WHY NOT FIXED:
+        //   Precise coverage requires splitting into multiple MPU regions, but:
+        //   - Would consume more of the limited 8 MPU regions
+        //   - Complex algorithm to optimally split arbitrary ranges
+        //   - May not always be possible (e.g., 9 memory regions in system)
+        //   - Current approach guarantees coverage with simple logic
+        //
+        // SECURITY IMPLICATIONS:
+        //   - Low to Medium severity depending on memory layout
+        //   - Could expose heap metadata, adjacent data structures, or other process memory
+        //   - Violates principle of least privilege
+        //   - Particularly concerning at userspace/kernel boundaries
+        //
+        // MITIGATION:
+        //   - Design memory layout with sub-region boundaries in mind
+        //   - Place guard regions between sensitive structures
+        //   - Align allocations to sub-region boundaries when possible
+        //   - Consider PMSAv8 architectures (ARMv8-M) which don't have this limitation
+        //
+        // This is an ACCEPTED RISK in the current implementation prioritizing simplicity
+        // and guaranteed coverage over precision.
+        //
         // Disable sub-regions that fall outside [start, end)
         let mut i = 0;
         while i < 8 {
