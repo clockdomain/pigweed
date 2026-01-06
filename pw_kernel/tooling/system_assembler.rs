@@ -252,9 +252,61 @@ impl<'data> SystemImage<'data> {
             new_segment.p_paddr = segment.p_paddr;
             new_segment.p_vaddr = segment.p_vaddr;
             for section_id in &segment.sections {
+                // ============================================================================
+                // FIX: Preserve original section addresses after append_section()
+                // ============================================================================
+                //
+                // BUG: On ARMv7-M targets (AST1030, LM3S6965), app sections were being shifted
+                // by 0x420 bytes backward during ELF merge, causing userspace entry points to
+                // fall outside their configured MPU regions and triggering MemManage faults.
+                //
+                // ROOT CAUSE: The `object` crate's `append_section()` method recalculates
+                // section addresses (`sh_addr`) based on the segment's `p_vaddr`. On ARMv7-M:
+                //
+                //   - App linker scripts specify: FLASH ORIGIN = 0x40420
+                //   - Individual app ELF section: .code sh_addr = 0x40420 (CORRECT)
+                //   - Individual app ELF segment: p_vaddr = 0x40000 (4KB aligned for MPU)
+                //
+                // The 0x420 gap between segment start and section start is due to ELF file
+                // padding for segment alignment (common with PMSAv7's power-of-2 requirements).
+                //
+                // When append_section() is called, it sets:
+                //   sh_addr = segment.p_vaddr + (section offset within segment)
+                //
+                // But because we copy p_vaddr verbatim (0x40000), the section ends up at
+                // 0x40000 instead of 0x40420. This creates a mismatch:
+                //
+                //   - MPU Region 1 (app code): [0x40420, 0x60420)
+                //   - Actual app entry point: 0x40000
+                //   - Result: MemManage fault (address not in any enabled region)
+                //
+                // FIX: Save the original section address before append_section() modifies it,
+                // then restore it afterward. This preserves the linker's intended memory layout.
+                //
+                // WHY ARMv8-M WORKS: ARMv8-M uses larger alignment (0x10000) and produces ELFs
+                // where segment p_vaddr matches section sh_addr, so append_section() calculates
+                // the correct address by coincidence.
+                //
+                // SYMPTOM WITHOUT FIX:
+                //   - Userspace thread starts executing
+                //   - CPU fetches instruction at entry point (e.g., 0x40000)
+                //   - MPU check fails: 0x40000 is not in any enabled region
+                //   - MemManage fault occurs with IACCVIOL (Instruction Access Violation)
+                //   - Fault handler runs in infinite loop, system appears hung
+                // ============================================================================
+
+                // Save the original section address before append_section() modifies it.
+                let original_section = app.sections.get(*section_id);
+                let original_addr = original_section.sh_addr;
+
                 let mapped_section_id = Self::get_mapped_section_id(section_map, *section_id)?;
                 let section = self.builder.sections.get_mut(mapped_section_id.unwrap());
                 new_segment.append_section(section);
+
+                // Restore the original section address to preserve the linker's intended layout.
+                // This ensures app code remains at the address specified in the linker script,
+                // matching the MPU regions configured in the generated codegen.rs.
+                section.sh_addr = original_addr;
             }
             // println!("Added segment {:?}", new_segment.id());
         }
@@ -275,14 +327,125 @@ impl<'data> SystemImage<'data> {
                 let new_name = format!("{}_{}", symbol.name, app_name);
                 new_symbol.name = new_name.into_bytes().into();
             }
+            // ============================================================================
+            // FIX: Adjust symbol addresses for section relocation
+            // ============================================================================
+            //
+            // RELATED BUG: When section addresses are preserved (see fix in add_app_segments),
+            // symbol addresses must also be adjusted to reflect the new section locations.
+            //
+            // There are two categories of symbols that need handling:
+            //
+            // 1. SECTION-ASSOCIATED SYMBOLS (symbol.section.is_some()):
+            //    These are normal function/data symbols defined relative to a section.
+            //    Their st_value is an address within the section. When the section moves,
+            //    the symbol address must move with it.
+            //
+            //    Example: _start symbol at 0x40420 in section .code (also at 0x40420)
+            //    - Offset within section: 0x40420 - 0x40420 = 0x0
+            //    - If section stays at 0x40420: symbol stays at 0x40420 + 0x0 = 0x40420 ✓
+            //
+            // 2. ABSOLUTE/LINKER-DEFINED SYMBOLS (symbol.section.is_none()):
+            //    These are symbols like `__sdata`, `__edata`, `pw_boot_stack_low_addr` that
+            //    the linker creates. They have no associated section but their values often
+            //    fall within allocatable sections' address ranges.
+            //
+            //    For these, we check if the symbol's value falls within any relocated
+            //    section's address range and apply the same offset adjustment.
+            //
+            //    Example: __sdata at 0xa0420 in RAM section [0xa0420, 0xa4420)
+            //    - If RAM section moves, __sdata must move with it
+            //
+            // WHY THIS MATTERS FOR ARMv7-M:
+            //    Without this fix, entry point symbols like _start_initiator_0 would have
+            //    stale addresses (0x40000 instead of 0x40420), causing the kernel to jump
+            //    to the wrong location. The codegen.rs uses these symbol addresses to set
+            //    the thread's initial PC, so incorrect symbols lead to MemManage faults.
+            //
+            // INTERACTION WITH SECTION FIX:
+            //    The section address preservation fix (above) ensures sh_addr is correct.
+            //    This symbol fix ensures st_value is recalculated based on the preserved
+            //    sh_addr, keeping symbols consistent with their containing sections.
+            // ============================================================================
+
             if symbol.section.is_some() {
-                new_symbol.section =
-                    Self::get_mapped_section_id(section_map, symbol.section.unwrap())?;
+                let old_section_id = symbol.section.unwrap();
+                let new_section_id = Self::get_mapped_section_id(section_map, old_section_id)?;
+                new_symbol.section = new_section_id;
+
+                // If symbol is in a section, adjust its address for the section's new location.
+                // The symbol's value is an absolute address, not a section-relative offset.
+                // We need to convert: old_addr -> offset_in_section -> new_addr
+                if let Some(new_id) = new_section_id {
+                    let old_section = app.sections.get(old_section_id);
+                    let new_section = self.builder.sections.get(new_id);
+
+                    // Calculate offset within the section.
+                    // Example: symbol at 0x40420, section at 0x40420 -> offset = 0
+                    let offset_in_section = symbol.st_value.wrapping_sub(old_section.sh_addr);
+
+                    // Set symbol address to new section base + offset.
+                    // With our section address preservation fix, old and new section addresses
+                    // should match, so this effectively preserves the original symbol address.
+                    new_symbol.st_value = new_section.sh_addr.wrapping_add(offset_in_section);
+                } else {
+                    // No section mapping (section was filtered out), preserve original value.
+                    new_symbol.st_value = symbol.st_value;
+                }
+            } else {
+                // Symbol not explicitly associated with a section (e.g., absolute symbols
+                // or linker-defined symbols like __sdata, __edata, pw_boot_stack_*).
+                //
+                // If the symbol's value falls within a relocated section's address range,
+                // adjust it using the same section-relative offset logic.
+                // Otherwise, leave it unchanged.
+                let mut new_value = symbol.st_value;
+
+                for old_section in &app.sections {
+                    // Only consider allocatable sections that are actually mapped into
+                    // the loadable image. Non-allocatable sections (debug info, etc.)
+                    // don't contribute to the memory layout.
+                    if !old_section.is_alloc() {
+                        continue;
+                    }
+
+                    let start = old_section.sh_addr;
+                    let size = old_section.sh_size;
+                    if size == 0 {
+                        continue;
+                    }
+
+                    let end = start.wrapping_add(size);
+                    let addr = symbol.st_value;
+
+                    // Check if symbol's value falls within this section's range [start, end)
+                    if addr < start || addr >= end {
+                        continue;
+                    }
+
+                    // This absolute symbol's value falls within this section.
+                    // Treat it as if it were section-relative and apply the same
+                    // relocation that we apply to section-based symbols.
+                    let old_section_id = old_section.id();
+                    let new_section_id = Self::get_mapped_section_id(section_map, old_section_id)?;
+
+                    if let Some(new_id) = new_section_id {
+                        let new_section = self.builder.sections.get(new_id);
+                        let offset_in_section = addr.wrapping_sub(start);
+                        new_value = new_section.sh_addr.wrapping_add(offset_in_section);
+                    }
+
+                    // An absolute symbol should belong to at most one allocatable section
+                    // range, so we can stop once we've found and adjusted it.
+                    break;
+                }
+
+                new_symbol.st_value = new_value;
             }
+
             new_symbol.st_info = symbol.st_info;
             new_symbol.st_other = symbol.st_other;
             new_symbol.st_shndx = symbol.st_shndx;
-            new_symbol.st_value = symbol.st_value;
             new_symbol.st_size = symbol.st_size;
             new_symbol.version = symbol.version;
             new_symbol.version_hidden = symbol.version_hidden;
