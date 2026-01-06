@@ -13,6 +13,19 @@
 // the License.
 
 //! PMSAv7 (ARMv7-M) MPU implementation
+//!
+//! PMSAv7 (Protected Memory System Architecture v7) is the MPU architecture
+//! used in ARMv7-M processors (Cortex-M3, Cortex-M4, Cortex-M7). Unlike PMSAv8,
+//! PMSAv7 requires:
+//!
+//! - **Power-of-2 region sizes**: Regions must be 32 bytes to 4GB, always a power of 2
+//! - **Size-aligned bases**: Region base must be aligned to its size
+//! - **Sub-region disable (SRD)**: Each region can disable up to 8 sub-regions
+//!   (each 1/8th of the total region) to handle non-power-of-2 ranges
+//! - **Inline memory attributes**: TEX, C, B, S fields in RASR (no MAIR registers)
+//!
+//! This implementation uses sub-regions to map arbitrary memory ranges to
+//! PMSAv7's power-of-2 constraints.
 
 use kernel_config::{CortexMKernelConfigInterface as _, KernelConfig};
 use memory_config::{MemoryRegion, MemoryRegionType};
@@ -23,9 +36,7 @@ use crate::regs::mpu::*;
 /// PMSAv7 MPU Region
 #[derive(Copy, Clone)]
 pub struct MpuRegion {
-    #[allow(dead_code)]
     pub rbar: RbarVal,
-    #[allow(dead_code)]
     pub rasr: RasrVal,
 }
 
@@ -48,36 +59,46 @@ impl MpuRegion {
         // PMSAv7 requires power-of-2 sized regions aligned to their size.
         // Use sub-regions to handle arbitrary ranges.
         let aligned_region = Self::calculate_aligned_region(region.start, region.end);
-        
+
         let (xn, tex, s, c, b, ap) = match region.ty {
             MemoryRegionType::ReadOnlyData => (
                 /* xn */ true,
-                /* tex */ 0b001,  // Normal memory, outer and inner write-back
-                /* s */ true, /* c */ true, /* b */ true,
+                /* tex */ 0b001, // Normal memory, outer and inner write-back
+                /* s */ true,
+                /* c */ true,
+                /* b */ true,
                 RasrAp::RoAny,
             ),
             MemoryRegionType::ReadWriteData => (
                 /* xn */ true,
-                /* tex */ 0b001,  // Normal memory, outer and inner write-back
-                /* s */ false, /* c */ true, /* b */ true,
+                /* tex */ 0b001, // Normal memory, outer and inner write-back
+                /* s */ false,
+                /* c */ true,
+                /* b */ true,
                 RasrAp::RwAny,
             ),
             MemoryRegionType::ReadOnlyExecutable => (
                 /* xn */ false,
-                /* tex */ 0b001,  // Normal memory, outer and inner write-back
-                /* s */ true, /* c */ true, /* b */ true,
+                /* tex */ 0b001, // Normal memory, outer and inner write-back
+                /* s */ true,
+                /* c */ true,
+                /* b */ true,
                 RasrAp::RoAny,
             ),
             MemoryRegionType::ReadWriteExecutable => (
                 /* xn */ false,
-                /* tex */ 0b001,  // Normal memory, outer and inner write-back
-                /* s */ true, /* c */ true, /* b */ true,
+                /* tex */ 0b001, // Normal memory, outer and inner write-back
+                /* s */ true,
+                /* c */ true,
+                /* b */ true,
                 RasrAp::RwAny,
             ),
             MemoryRegionType::Device => (
                 /* xn */ true,
-                /* tex */ 0b000,  // Device memory
-                /* s */ true, /* c */ false, /* b */ true,
+                /* tex */ 0b000, // Device memory
+                /* s */ true,
+                /* c */ false,
+                /* b */ true,
                 RasrAp::RoAny,
             ),
         };
@@ -85,7 +106,7 @@ impl MpuRegion {
         #[expect(clippy::cast_possible_truncation)]
         Self {
             rbar: RbarVal::const_default()
-                .with_valid(false)  // Region selected by RNR, not by RBAR.REGION
+                .with_valid(false) // Region selected by RNR, not by RBAR.REGION
                 .with_addr(aligned_region.base as u32),
 
             rasr: RasrVal::const_default()
@@ -113,7 +134,7 @@ impl MpuRegion {
         }
         // SIZE field is bits - 1, minimum is 4 (32 bytes)
         if bits < 5 {
-            4  // Minimum 32 bytes
+            4 // Minimum 32 bytes
         } else {
             #[expect(clippy::cast_possible_truncation)]
             ((bits - 1) as u8)
@@ -123,11 +144,11 @@ impl MpuRegion {
     /// Calculate an aligned region that covers [start, end) using sub-regions
     const fn calculate_aligned_region(start: usize, end: usize) -> AlignedRegion {
         let requested_size = end - start;
-        
+
         // PMSAv7 maximum region size is 4GB (2^32), but SIZE field max is 31 (2^32)
         // For very large regions (like kernel's full address space), use maximum size
         const MAX_REGION_SIZE: usize = 0x8000_0000; // 2GB, SIZE=30
-        
+
         if requested_size >= MAX_REGION_SIZE {
             // Use maximum region size with no sub-regions disabled
             return AlignedRegion {
@@ -136,7 +157,7 @@ impl MpuRegion {
                 srd_mask: 0,
             };
         }
-        
+
         // Find the smallest power-of-2 region that can cover the requested range
         // Start with the requested size, round up to next power of 2
         let mut region_size = 32; // Minimum 32 bytes
@@ -151,17 +172,17 @@ impl MpuRegion {
                 };
             }
         }
-        
+
         // Find an aligned base that covers the requested range
         // The base must be aligned to the region size
         let mut aligned_base = start & !(region_size - 1); // Align down to region_size
-        
+
         // Check if this aligned region covers the end address
         // If not, we need a larger region
         while aligned_base + region_size < end {
             region_size *= 2;
             aligned_base = start & !(region_size - 1);
-            
+
             if region_size > MAX_REGION_SIZE {
                 // Fall back to max size at base 0
                 return AlignedRegion {
@@ -171,21 +192,21 @@ impl MpuRegion {
                 };
             }
         }
-        
+
         // Calculate SIZE field: log2(region_size) - 1
         let size_field = Self::calculate_size_field(region_size);
-        
+
         // Calculate sub-region disable mask
         // Each sub-region is region_size / 8
         let subregion_size = region_size / 8;
         let mut srd_mask: u8 = 0;
-        
+
         // Disable sub-regions that fall outside [start, end)
         let mut i = 0;
         while i < 8 {
             let subregion_start = aligned_base + i * subregion_size;
             let subregion_end = subregion_start + subregion_size;
-            
+
             // Disable if this sub-region doesn't overlap with [start, end)
             // A sub-region overlaps if: subregion_start < end AND subregion_end > start
             let overlaps = subregion_start < end && subregion_end > start;
@@ -194,7 +215,7 @@ impl MpuRegion {
             }
             i += 1;
         }
-        
+
         AlignedRegion {
             base: aligned_base,
             size_field,
@@ -213,7 +234,8 @@ impl MpuRegion {
         pw_assert::debug_assert!(region_number < 255);
         #[expect(clippy::cast_possible_truncation)]
         {
-            mpu.rnr.write(RnrVal::default().with_region(region_number as u8));
+            mpu.rnr
+                .write(RnrVal::default().with_region(region_number as u8));
         }
         mpu.rbar.write(self.rbar);
         mpu.rasr.write(self.rasr);
@@ -254,7 +276,7 @@ impl MemoryConfig {
     /// memory config.
     pub unsafe fn write(&self) {
         let mut mpu = Regs::get().mpu;
-        
+
         // Disable MPU before configuration
         mpu.ctrl.write(
             mpu.ctrl
@@ -264,12 +286,15 @@ impl MemoryConfig {
                 .with_privdefena(true),
         );
 
-        pw_log::info!("Programming {} MPU regions (PMSAv7)", self.mpu_regions.len() as usize);
-        
+        pw_log::info!(
+            "Programming {} MPU regions (PMSAv7)",
+            self.mpu_regions.len() as usize
+        );
+
         for (index, region) in self.mpu_regions.iter().enumerate() {
             region.write(&mut mpu, index);
         }
-        
+
         // Enable the MPU
         mpu.ctrl.write(mpu.ctrl.read().with_enable(true));
     }
@@ -288,7 +313,7 @@ impl MemoryConfig {
 }
 
 /// Initialize the MPU for supporting user space memory protection (PMSAv7).
-/// 
+///
 /// PMSAv7 doesn't use MAIR registers - memory attributes are encoded directly
 /// in the RASR register using TEX, C, B, S fields.
 pub fn init() {
