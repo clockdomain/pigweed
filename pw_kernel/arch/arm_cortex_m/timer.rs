@@ -80,12 +80,23 @@ pub fn systick_early_init() {
     rvr.write(rvr_val);
 
     // enable counter and interrupts
-    csr_val = csr.read().with_enable(true).with_tickint(true);
+    // Note: We only enable the counter here. Interrupts are enabled in
+    // systick_init() to prevent early ticks before the scheduler is ready.
+    csr_val = csr.read().with_enable(true).with_tickint(false);
     csr.write(csr_val);
 }
 
 pub fn systick_init() {
-    let systick_regs = Regs::get().systick;
+    let mut systick_regs = Regs::get().systick;
+
+    // Enable SysTick interrupt now that the kernel is initialized
+    let csr_val = systick_regs
+        .csr
+        .read()
+        .with_enable(true)
+        .with_tickint(true);
+    systick_regs.csr.write(csr_val);
+
     let ticks_per_10ms = systick_regs.calib.read().tenms();
     info!("Ticks per 10ms: {}", ticks_per_10ms as u32);
     if ticks_per_10ms > 0 {
