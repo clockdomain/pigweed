@@ -252,9 +252,20 @@ impl<'data> SystemImage<'data> {
             new_segment.p_paddr = segment.p_paddr;
             new_segment.p_vaddr = segment.p_vaddr;
             for section_id in &segment.sections {
+                // Save the original section address before append_section() modifies it.
+                // This is necessary because append_section() recalculates sh_addr based on
+                // the segment's p_vaddr, which can differ from the section's original address
+                // due to alignment padding (common in ARMv7-M with 4KB segment alignment).
+                // See BUG_REPORT_ARMV7M_ENTRY_POINT_GAP.md for detailed analysis.
+                let original_section = app.sections.get(*section_id);
+                let original_addr = original_section.sh_addr;
+
                 let mapped_section_id = Self::get_mapped_section_id(section_map, *section_id)?;
                 let section = self.builder.sections.get_mut(mapped_section_id.unwrap());
                 new_segment.append_section(section);
+
+                // Restore the original section address to preserve the linker's intended layout.
+                section.sh_addr = original_addr;
             }
             // println!("Added segment {:?}", new_segment.id());
         }
