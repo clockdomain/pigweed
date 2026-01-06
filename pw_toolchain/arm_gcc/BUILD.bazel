@@ -134,6 +134,7 @@ cc_args(
         "-Wl,--gc-sections",
         "-specs=nano.specs",
         "-specs=nosys.specs",
+        "-nostartfiles",  # Prevent crt0.o conflict with custom entry points
         "-lstdc++",
         "-lnosys",
         "-lc",
