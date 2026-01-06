@@ -1,0 +1,30 @@
+// Copyright 2025 The Pigweed Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not
+// use this file except in compliance with the License. You may obtain a copy of
+// the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations under
+// the License.
+
+// AST1030 Unittest Runner Configuration
+// ARM Cortex-M4 @ 200 MHz (simulated at 12 MHz for QEMU)
+// 768KB SRAM (640KB usable), executes from RAM
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1056,  // 0x420 (264 vectors)
+    },
+    kernel: {
+        flash_start_address: 0x00000420,  // After vector table
+        flash_size_bytes: 262144,         // 256KB for kernel code (in RAM)
+        ram_start_address: 0x00040420,    // RAM starts after code
+        ram_size_bytes: 393216,           // 384KB for data
+    },
+}
