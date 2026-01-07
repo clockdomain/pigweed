@@ -329,7 +329,14 @@ impl MemoryConfig {
 
     /// Log the details of the memory configuration.
     pub fn dump(&self) {
-        for (index, region) in self.mpu_regions.iter().enumerate() {
+        // Only dump the regions that are actively used by the configuration.
+        // The remaining MPU regions are initialized to default (disabled) by write().
+        for (index, region) in self
+            .mpu_regions
+            .iter()
+            .take(self.generic_regions.len())
+            .enumerate()
+        {
             pw_log::debug!(
                 "MPU region {}: RBAR={:#010x}, RASR={:#010x}",
                 index as usize,
