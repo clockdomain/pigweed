@@ -180,10 +180,33 @@ fn validate_handler_function(handler: &ItemFn) -> Result<()> {
 fn save_exception_frame(asm: &mut String, kernel_mode: &KernelMode) {
     asm.push_str("// save the additional registers\n");
     if kernel_mode.save_psp_needed() {
+        // CONTROL Register Save Strategy:
+        //
+        // The CONTROL value is invariant per-thread:
+        //   - Set once during thread initialization (initialize_frame)
+        //   - Userspace threads: CONTROL=0x03 (nPRIV=1, SPSEL=1)
+        //   - Kernel threads: CONTROL=0x00 (nPRIV=0, SPSEL=0)
+        //   - Never changes during thread execution
+        //
+        // On context switch, the restore path loads CONTROL from the INCOMING
+        // thread's kernel frame (which was correctly initialized). The value
+        // saved from the OUTGOING thread's frame is never read.
+        //
+        // Therefore, we push a distinctive placeholder (0xDEAD) instead of
+        // the actual CONTROL value. If 0xDEAD ever appears in debug output
+        // or is restored to CONTROL, it signals a bug in the restore path.
+        //
+        // Stack frame layout (KernelExceptionFrame):
+        //   r4-r11 (8 words) - callee-saved registers
+        //   psp    (1 word)  - process stack pointer
+        //   control (1 word) - placeholder (restored from new thread's frame)
+        //   return_address (1 word) - EXC_RETURN value
+        //
+        // See: pw_kernel/docs/design_control_register_fix.md
         asm.push_str(
             "
-            mrs     r1, control
             mrs     r0, psp
+            ldr     r1, =0xDEAD     // Placeholder (never read); see design doc
             push    {{ r0 - r1, lr }}
 
             push    {{ r4 - r11 }}
@@ -217,6 +240,7 @@ fn restore_exception_frame(asm: &mut String, kernel_mode: &KernelMode) {
             pop     {{ r0 - r1, lr }}
             msr     psp, r0
             msr     control, r1
+            isb                     // Required after CONTROL modification per ARM ARM
 
             bx      lr
     ",

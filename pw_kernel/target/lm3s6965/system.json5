@@ -1,0 +1,45 @@
+// Copyright 2025 The Pigweed Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not
+// use this file except in compliance with the License. You may obtain a copy of
+// the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations under
+// the License.
+
+// Minimal ARMv7-M system configuration for testing
+{
+  arch: {
+    type: "armv7m",
+    vector_table_start_address: 0x00000000,
+    vector_table_size_bytes: 1024,  // 256 vectors * 4 bytes
+  },
+  kernel: {
+    flash_start_address: 0x00000400,  // After vector table
+    flash_size_bytes: 130560,         // ~127KB (leaving 128KB for apps)
+    ram_start_address: 0x20000000,
+    ram_size_bytes: 32768,            // 32KB RAM (leaving 32KB for apps)
+  },
+  apps: [
+    {
+      name: "hello",
+      flash_size_bytes: 65536,  // 64KB flash for app
+      ram_size_bytes: 8192,     // 8KB RAM for app
+      process: {
+        name: "hello process",
+        objects: [],
+        threads: [
+          {
+            name: "main thread",
+            stack_size_bytes: 1024,   // 1KB stack
+          },
+        ],
+      },
+    },
+  ],
+}
