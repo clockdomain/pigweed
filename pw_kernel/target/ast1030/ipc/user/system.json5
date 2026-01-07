@@ -12,33 +12,35 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-// AST1030 IPC Test Configuration
-// ARM Cortex-M4 @ 200 MHz (simulated at 12 MHz for QEMU)
-// 768KB SRAM (640KB usable), executes from RAM
+// ASPEED AST1030 IPC test configuration
+// ARM Cortex-M4 @ 200 MHz with 640KB usable SRAM
+// NOTE: AST1030 does not support XIP - ROM code copies firmware from flash to RAM
+// and executes from RAM starting at 0x00000000
+// Reference: aspeed-rust memory.x
 //
-// Memory Layout:
+// Memory Layout (from test-baseline, avoids PMSAv7 subregion issues):
 //   0x00000000 - 0x00000420: Vector table (1056 bytes)
 //   0x00000420 - 0x00040420: Kernel code (256KB)
-//   0x00040420 - 0x00060420: Initiator app code (128KB)
-//   0x00060420 - 0x00080420: Handler app code (128KB)
-//   0x000a0420 - 0x000a4420: Initiator app RAM (16KB)
-//   0x000a4420 - 0x000a8420: Handler app RAM (16KB)
+//   0x00040420 - 0x000A0420: Kernel RAM (384KB)
+//   0x000A0420 - 0x000C0420: Initiator app code (128KB)
+//   0x000C0420 - 0x000E0420: Handler app code (128KB)
+//   0x000A0420+: App RAM (after kernel RAM)
 {
     arch: {
         type: "armv7m",
         vector_table_start_address: 0x00000000,
-        vector_table_size_bytes: 1056,  // 0x420 (264 vectors)
+        vector_table_size_bytes: 1056,  // 0x420
     },
     kernel: {
-        flash_start_address: 0x00000420,  // After vector table
+        flash_start_address: 0x00000420,  // After vector table (per aspeed-rust)
         flash_size_bytes: 262144,         // 256KB for kernel code (in RAM)
-        ram_start_address: 0x00080420,    // RAM starts after app code
-        ram_size_bytes: 131072,           // 128KB for kernel data
+        ram_start_address: 0x00040420,    // RAM for data starts after 256KB code (0x420 + 0x40000)
+        ram_size_bytes: 393216,           // Remaining RAM: 640KB - 256KB - 1KB = 383KB, round to 384KB
     },
     apps: {
         initiator: {
-            flash_size_bytes: 131072, // 128KB
-            ram_size_bytes: 16384,    // 16KB
+            flash_size_bytes: 131072,   // 128KB for initiator app
+            ram_size_bytes: 16384,      // 16KB RAM for initiator
             process: {
                 name: "initiator process",
                 objects: {
@@ -51,14 +53,14 @@
                 threads: [
                     {
                         name: "initiator thread",
-                        stack_size_bytes: 1024,
+                        stack_size_bytes: 2048,  // 2KB stack
                     },
                 ],
             },
         },
         handler: {
-            flash_size_bytes: 131072, // 128KB
-            ram_size_bytes: 16384,    // 16KB
+            flash_size_bytes: 131072,   // 128KB for handler app
+            ram_size_bytes: 16384,      // 16KB RAM for handler
             process: {
                 name: "handler process",
                 objects: {
@@ -69,7 +71,7 @@
                 threads: [
                     {
                         name: "handler thread",
-                        stack_size_bytes: 1024,
+                        stack_size_bytes: 2048,  // 2KB stack
                     },
                 ],
             },

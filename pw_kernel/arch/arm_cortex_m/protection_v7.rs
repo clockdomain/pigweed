@@ -295,8 +295,19 @@ impl MemoryConfig {
             region.write(&mut mpu, index);
         }
 
-        // Enable the MPU
-        mpu.ctrl.write(mpu.ctrl.read().with_enable(true));
+        // Enable the MPU with PRIVDEFENA to allow kernel access
+        // Note: We must preserve PRIVDEFENA=true so kernel code can execute
+        let ctrl_val = mpu.ctrl.read().with_enable(true).with_privdefena(true);
+        mpu.ctrl.write(ctrl_val);
+
+        // Memory barrier to ensure MPU config is complete before continuing
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+        unsafe {
+            core::arch::asm!("dsb", "isb", options(nostack, preserves_flags));
+        }
+
+        // NOTE: Do NOT log here! After MPU is configured for userspace,
+        // logging may trigger memory accesses that violate the new MPU config.
     }
 
     /// Log the details of the memory configuration.

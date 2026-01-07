@@ -25,14 +25,14 @@ _start:
 	ldr  r0, =_pw_static_init_ram_start   // destination (RAM)
 	ldr  r1, =_pw_static_init_flash_start // source (Flash)
 	ldr  r2, =_pw_static_init_ram_end     // end destination (RAM)
-	subs r2, r2, r0                       // number of bytes to memcpy
+	sub  r2, r2, r0                       // number of bytes to memcpy
 	bl   memcpy
 
 	// Zero-init RAM (.bss section init).
 	ldr  r0, =_pw_zero_init_ram_start // destination (RAM)
 	movs r1, #0                       // value to write
 	ldr  r2, =_pw_zero_init_ram_end   // end destination (RAM)
-	subs r2, r2, r0                   // number of bytes to memset
+	sub  r2, r2, r0                   // number of bytes to memset
 	bl   memset
 
 	// Memory is initialized, now call the applications main entry function.

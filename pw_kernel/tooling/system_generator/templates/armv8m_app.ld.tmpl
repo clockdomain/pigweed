@@ -101,6 +101,11 @@ SECTIONS
   /* Explicitly initialized global and static data. (.data)*/
   .static_init_ram : ALIGN(4)
   {
+    /* Explicitly set location counter to start of RAM for .data VMA.
+     * GNU LD's location counter is global - the '>RAM' directive sets
+     * the output region but does NOT reset the location counter. Without
+     * this, .data would be placed at the wrong address after FLASH sections. */
+    . = ORIGIN(RAM);
     *(.data)
     *(.data*)
     . = ALIGN(4);

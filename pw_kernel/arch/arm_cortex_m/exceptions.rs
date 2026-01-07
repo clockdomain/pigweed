@@ -256,10 +256,82 @@ impl KernelExceptionFrame {
 #[unsafe(no_mangle)]
 extern "C" fn pw_kernel_hard_fault(frame: *mut KernelExceptionFrame) -> *mut KernelExceptionFrame {
     let hfsr = with_exposed_provenance::<u32>(0xe000ed2c);
+    let cfsr = with_exposed_provenance::<u32>(0xe000ed28);
+    let mmfar = with_exposed_provenance::<u32>(0xe000ed34);
+    let bfar = with_exposed_provenance::<u32>(0xe000ed38);
+
+    let hfsr_val = unsafe { hfsr.read_volatile() };
+    let cfsr_val = unsafe { cfsr.read_volatile() };
+
     info!(
-        "HardFault exception triggered: HFSR={:#010x}",
-        unsafe { hfsr.read_volatile() } as u32
+        "HardFault exception triggered: HFSR={:#010x} CFSR={:#010x}",
+        hfsr_val as u32,
+        cfsr_val as u32
     );
+
+    // Decode CFSR bits for debugging
+    // MemManage faults (bits 0-7)
+    if cfsr_val & 0x01 != 0 {
+        info!("  MMFSR.IACCVIOL: Instruction access violation");
+    }
+    if cfsr_val & 0x02 != 0 {
+        info!("  MMFSR.DACCVIOL: Data access violation");
+    }
+    if cfsr_val & 0x08 != 0 {
+        info!("  MMFSR.MUNSTKERR: MemManage fault on unstacking");
+    }
+    if cfsr_val & 0x10 != 0 {
+        info!("  MMFSR.MSTKERR: MemManage fault on stacking");
+    }
+    if cfsr_val & 0x80 != 0 {
+        info!(
+            "  MMFSR.MMARVALID: MMFAR={:#010x}",
+            unsafe { mmfar.read_volatile() } as u32
+        );
+    }
+
+    // BusFault (bits 8-15)
+    if cfsr_val & 0x100 != 0 {
+        info!("  BFSR.IBUSERR: Instruction bus error");
+    }
+    if cfsr_val & 0x200 != 0 {
+        info!("  BFSR.PRECISERR: Precise data bus error");
+    }
+    if cfsr_val & 0x400 != 0 {
+        info!("  BFSR.IMPRECISERR: Imprecise data bus error");
+    }
+    if cfsr_val & 0x800 != 0 {
+        info!("  BFSR.UNSTKERR: BusFault on unstacking");
+    }
+    if cfsr_val & 0x1000 != 0 {
+        info!("  BFSR.STKERR: BusFault on stacking");
+    }
+    if cfsr_val & 0x8000 != 0 {
+        info!(
+            "  BFSR.BFARVALID: BFAR={:#010x}",
+            unsafe { bfar.read_volatile() } as u32
+        );
+    }
+
+    // UsageFault (bits 16-31)
+    if cfsr_val & 0x10000 != 0 {
+        info!("  UFSR.UNDEFINSTR: Undefined instruction");
+    }
+    if cfsr_val & 0x20000 != 0 {
+        info!("  UFSR.INVSTATE: Invalid state (Thumb bit)");
+    }
+    if cfsr_val & 0x40000 != 0 {
+        info!("  UFSR.INVPC: Invalid PC load");
+    }
+    if cfsr_val & 0x80000 != 0 {
+        info!("  UFSR.NOCP: No coprocessor");
+    }
+    if cfsr_val & 0x1000000 != 0 {
+        info!("  UFSR.UNALIGNED: Unaligned access");
+    }
+    if cfsr_val & 0x2000000 != 0 {
+        info!("  UFSR.DIVBYZERO: Divide by zero");
+    }
 
     unsafe { &*frame }.dump();
     #[expect(clippy::empty_loop)]

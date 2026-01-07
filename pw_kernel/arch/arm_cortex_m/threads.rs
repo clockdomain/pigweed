@@ -352,6 +352,22 @@ impl kernel::scheduler::thread::ThreadState for ArchThreadState {
         let kernel_frame: *mut KernelExceptionFrame =
             Stack::aligned_stack_allocation_mut(unsafe { kernel_stack.end_mut() }, STACK_ALIGNMENT);
 
+        let exc_return = ExcReturn::new(
+            ExcReturnStack::ThreadSecure,
+            ExcReturnRegisterStacking::Default,
+            ExcReturnFrameType::Standard,
+            ExcReturnMode::ThreadSecure,
+        );
+
+        info!(
+            "initialize_user_frame: user_frame={:#010x} kernel_frame={:#010x} psp={:#010x} pc={:#010x} exc_ret={:#010x}",
+            user_frame as usize,
+            kernel_frame as usize,
+            user_frame.expose_provenance() as usize,
+            initial_pc as usize,
+            exc_return.bits() as usize
+        );
+
         self.initialize_frame(
             user_frame,
             kernel_frame,
@@ -359,12 +375,7 @@ impl kernel::scheduler::thread::ThreadState for ArchThreadState {
                 .with_npriv(true)
                 .with_spsel(Spsel::Process),
             user_frame.expose_provenance().cast_into(),
-            ExcReturn::new(
-                ExcReturnStack::ThreadSecure,
-                ExcReturnRegisterStacking::Default,
-                ExcReturnFrameType::Standard,
-                ExcReturnMode::ThreadSecure,
-            ),
+            exc_return,
             initial_pc,
             (args.0, args.1, args.2, 0),
         );
@@ -446,17 +457,39 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
         sched_state.current_thread_id() as usize
     );
 
+    // Debug: Log the frame we're about to restore BEFORE MPU switch
+    // After MPU is reconfigured for userspace, logging may fault.
+    #[cfg(feature = "user_space")]
+    {
+        let new_frame = unsafe { &*(*new_thread).frame };
+        info!(
+            "PendSV returning frame: psp={:#010x} control={:#010x} ret_addr={:#010x}",
+            new_frame.psp as u32,
+            new_frame.control.0 as u32,
+            new_frame.return_address as u32
+        );
+    }
+
+    // IMPORTANT: Drop sched_state BEFORE updating THREAD_LOCAL_STATE!
+    // The SpinLockGuard contains a PreemptDisableGuard that decrements
+    // preempt_disable_count on drop. If we update THREAD_LOCAL_STATE first,
+    // the decrement would use the NEW thread's count (which is 0), causing underflow.
+    drop(sched_state);
+
+    // Now safe to update thread local state to new thread
+    unsafe { THREAD_LOCAL_STATE = NonNull::from_ref(&(*new_thread).local) }
+
     // Memory context switch overhead is avoided for threads in the same
     // memory config space.
+    // NOTE: This MUST be the last thing before returning! After this,
+    // the MPU is configured for the new thread and any kernel memory
+    // access (including logging) may fault.
     #[cfg(feature = "user_space")]
     unsafe {
         if (*new_thread).memory_config != (*active_thread).memory_config {
             (*(*new_thread).memory_config).write();
         }
     }
-    drop(sched_state);
-
-    unsafe { THREAD_LOCAL_STATE = NonNull::from_ref(&(*new_thread).local) }
 
     unsafe { (*new_thread).frame }
 }
