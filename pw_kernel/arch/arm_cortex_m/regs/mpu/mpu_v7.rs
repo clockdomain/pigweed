@@ -35,6 +35,7 @@ impl RbarVal {
     rw_bool_field!(u32, valid, 4, "MPU region number valid");
 
     /// Extract region field (used when VALID bit is set).
+    #[must_use]
     pub const fn region(&self) -> u8 {
         #[expect(clippy::cast_possible_truncation)]
         (ops::get_u32(self.0, 0, 3) as u8)
@@ -119,6 +120,7 @@ impl RasrVal {
 
     /// Extract region size field (SIZE).
     /// Region size is 2^(SIZE+1) bytes, so SIZE=4 means 32 bytes, SIZE=31 means 4GB.
+    #[must_use]
     pub const fn size(&self) -> u8 {
         #[expect(clippy::cast_possible_truncation)]
         (ops::get_u32(self.0, 1, 5) as u8)
@@ -131,6 +133,7 @@ impl RasrVal {
     }
 
     /// Extract sub-region disable field (SRD).
+    #[must_use]
     pub const fn srd(&self) -> u8 {
         #[expect(clippy::cast_possible_truncation)]
         (ops::get_u32(self.0, 8, 15) as u8)
@@ -146,6 +149,7 @@ impl RasrVal {
     rw_bool_field!(u32, c, 17, "cacheable");
     rw_bool_field!(u32, s, 18, "shareable");
 
+    #[must_use]
     /// Extract TEX (Type Extension) field.
     pub const fn tex(&self) -> u8 {
         #[expect(clippy::cast_possible_truncation)]
