@@ -204,16 +204,21 @@ fn save_exception_frame(asm: &mut String, kernel_mode: &KernelMode) {
 
 fn restore_exception_frame(asm: &mut String, kernel_mode: &KernelMode) {
     if kernel_mode.save_psp_needed() {
+        // For user_space mode, we need to restore PSP, CONTROL, and EXC_RETURN.
+        // We pop EXC_RETURN into LR and use `bx lr` instead of `pop {pc}` because:
+        // 1. After MPU is reconfigured for userspace, kernel stack may not be accessible
+        // 2. `pop {pc}` would need to read from MSP, which may violate the userspace MPU
+        // 3. `bx lr` uses the register value directly, avoiding the memory access
         asm.push_str(
             "
             mov     sp, r0
             pop     {{ r4 - r11 }}
 
-            pop     {{ r0 - r1 }}
+            pop     {{ r0 - r1, lr }}
             msr     psp, r0
             msr     control, r1
 
-            pop     {{ pc }}
+            bx      lr
     ",
         );
     } else {
