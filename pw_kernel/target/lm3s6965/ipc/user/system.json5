@@ -11,6 +11,9 @@
 // WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // License for the specific language governing permissions and limitations under
 // the License.
+// LM3S6965 IPC test configuration
+// ARM Cortex-M3 (no FPU) - used to test userspace without FPU complications
+// QEMU lm3s6965evb: 256KB flash at 0x00000000, 64KB SRAM at 0x20000000
 {
     arch: {
         type: "armv7m",
@@ -19,25 +22,23 @@
     },
     kernel: {
         flash_start_address: 0x00000400,
-        flash_size_bytes: 130560,
+        flash_size_bytes: 130560,           // ~127KB for kernel
         ram_start_address: 0x20000000,
-        ram_size_bytes: 32768,
+        ram_size_bytes: 32768,              // 32KB for kernel
     },
-    apps: [
-        {
-            name: "initiator",
-            flash_size_bytes: 65536,
-            ram_size_bytes: 8192,
+    apps: {
+        initiator: {
+            flash_size_bytes: 32768,        // 32KB for initiator app
+            ram_size_bytes: 8192,           // 8KB RAM for initiator
             process: {
                 name: "initiator process",
-                objects: [
-                    {
-                        name: "IPC",
+                objects: {
+                    IPC: {
                         type: "channel_initiator",
                         handler_app: "handler",
                         handler_object_name: "IPC",
                     }
-                ],
+                },
                 threads: [
                     {
                         name: "initiator thread",
@@ -46,18 +47,16 @@
                 ],
             },
         },
-        {
-            name: "handler",
-            flash_size_bytes: 65536,
-            ram_size_bytes: 8192,
+        handler: {
+            flash_size_bytes: 32768,        // 32KB for handler app
+            ram_size_bytes: 8192,           // 8KB RAM for handler
             process: {
                 name: "handler process",
-                objects: [
-                    {
-                        name: "IPC",
+                objects: {
+                    IPC: {
                         type: "channel_handler",
                     },
-                ],
+                },
                 threads: [
                     {
                         name: "handler thread",
@@ -66,5 +65,5 @@
                 ],
             },
         },
-    ],
+    },
 }

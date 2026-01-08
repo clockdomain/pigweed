@@ -12,35 +12,25 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-//! Static kernel configuration for ARMv7-M minimal target.
+//! Static kernel configuration for LM3S6965 target (Cortex-M3, no FPU).
 
 #![no_std]
 
-pub use kernel_config::{CortexMKernelConfigInterface, KernelConfigInterface, NvicConfigInterface};
+pub use kernel_config::{CortexMKernelConfigInterface, KernelConfigInterface};
 
-/// Static kernel configuration.
-///
-/// This provides compile-time constants for the kernel, independent of the
-/// system-specific configuration generated from system.json5.
 pub struct KernelConfig;
 
 impl CortexMKernelConfigInterface for KernelConfig {
-    /// System tick frequency in Hz.
-    /// Using 12 MHz for QEMU LM3S6965 compatibility.
+    /// SysTick clock frequency in Hz.
+    /// Using 12 MHz for QEMU LM3S6965EVB.
     const SYS_TICK_HZ: u32 = 12_000_000;
 
     /// Number of MPU regions available.
-    /// ARMv7-M (PMSAv7) has 8 regions.
+    /// ARM Cortex-M3 with PMSAv7 has 8 regions.
     const NUM_MPU_REGIONS: usize = 8;
 }
 
 impl KernelConfigInterface for KernelConfig {
     /// System clock frequency in Hz.
     const SYSTEM_CLOCK_HZ: u64 = KernelConfig::SYS_TICK_HZ as u64;
-}
-
-pub struct NvicConfig;
-
-impl NvicConfigInterface for NvicConfig {
-    const MAX_IRQS: u32 = 64;
 }
