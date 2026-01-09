@@ -52,6 +52,7 @@ impl ArchConfigInterface for ArchConfig {
     ) -> Result<()> {
         match self {
             ArchConfig::Armv8M(arch_config) => arch_config.calculate_and_validate_config(config),
+            ArchConfig::Armv7M(arch_config) => arch_config.calculate_and_validate_config(config),
             ArchConfig::RiscV(arch_config) => arch_config.calculate_and_validate_config(config),
         }
     }
@@ -59,6 +60,7 @@ impl ArchConfigInterface for ArchConfig {
     fn get_interrupt_table_link_section(&self) -> Option<String> {
         match self {
             ArchConfig::Armv8M(config) => config.get_interrupt_table_link_section(),
+            ArchConfig::Armv7M(config) => config.get_interrupt_table_link_section(),
             ArchConfig::RiscV(config) => config.get_interrupt_table_link_section(),
         }
     }
