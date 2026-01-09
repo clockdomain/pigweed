@@ -252,9 +252,31 @@ impl<'data> SystemImage<'data> {
             new_segment.p_paddr = segment.p_paddr;
             new_segment.p_vaddr = segment.p_vaddr;
             for section_id in &segment.sections {
+                // Save original section address before append_section() modifies it.
+                // The `object` crate's append_section() recalculates sh_addr based on
+                // segment p_vaddr, which is incorrect when there's a gap between
+                // segment start and section start (common in ARMv7-M PMSAv7 ELFs
+                // due to power-of-2 alignment requirements).
+                let original_section = app.sections.get(*section_id);
+                let original_addr = original_section.sh_addr;
+
                 let mapped_section_id = Self::get_mapped_section_id(section_map, *section_id)?;
                 let section = self.builder.sections.get_mut(mapped_section_id.unwrap());
                 new_segment.append_section(section);
+
+                // Restore original address after append_section() overwrites it.
+                section.sh_addr = original_addr;
+            }
+
+            // Set segment p_vaddr to match first section's address.
+            // This ensures ELF loaders that use p_vaddr see the correct address.
+            if let Some(first_section_id) = segment.sections.first() {
+                let mapped_id = Self::get_mapped_section_id(section_map, *first_section_id)?;
+                if let Some(id) = mapped_id {
+                    let first_section = self.builder.sections.get(id);
+                    new_segment.p_vaddr = first_section.sh_addr;
+                    new_segment.p_paddr = first_section.sh_addr;
+                }
             }
             // println!("Added segment {:?}", new_segment.id());
         }
