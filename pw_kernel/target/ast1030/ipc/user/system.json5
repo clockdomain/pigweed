@@ -12,19 +12,25 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-// AST1030 User IPC Test Configuration
-// ARM Cortex-M4 @ 200 MHz (simulated at 12 MHz for QEMU)
-// AST1030 has 640KB usable SRAM (0xA0000 bytes)
+// ASPEED AST1030 IPC test configuration
+// ARM Cortex-M4 @ 200 MHz with 768KB SRAM (0x00000000 - 0x000BFFFF)
+// NOTE: AST1030 does not support XIP - ROM code copies firmware from flash to RAM
+// and executes from RAM starting at 0x00000000
+// Reference: aspeed-rust memory.x
 //
-// Memory Layout (avoids PMSAv7 subregion issues):
+// PMSAv7-Friendly Memory Layout:
+// The system generator places app flash after kernel flash, and app RAM after
+// kernel RAM. For PMSAv7 compatibility, regions must be at power-of-2 aligned
+// addresses to avoid MPU subregion overlap with kernel RAM.
+//
 //   0x00000000 - 0x00000420: Vector table (1056 bytes)
-//   0x00000420 - 0x00020420: Kernel code (128KB)
-//   0x00020420 - 0x00060420: Kernel RAM (256KB)
-//   0x00060420 - 0x00080420: Initiator app code (128KB)
-//   0x00080420 - 0x00088420: Initiator app RAM (32KB)
-//   0x00088420 - 0x00098420: Handler app code (64KB)
-//   0x00098420 - 0x000A0420: Handler app RAM (32KB)
-//   Total: ~640KB
+//   0x00000420 - 0x00020000: Kernel code (~126KB, ends at 128KB boundary)
+//   0x00020000 - 0x00040000: Initiator app code (128KB, power-of-2 aligned)
+//   0x00040000 - 0x00060000: Handler app code (128KB, power-of-2 aligned)
+//   0x00060000 - 0x00080000: Kernel RAM (128KB, after all flash)
+//   0x00080000 - 0x00090000: App RAM (64KB total)
+//
+// Total: 576KB, fits within AST1030's 768KB SRAM.
 {
     arch: {
         type: "armv7m",
@@ -33,15 +39,15 @@
     },
     kernel: {
         flash_start_address: 0x00000420,  // After vector table
-        flash_size_bytes: 131072,         // 128KB for kernel code
-        ram_start_address: 0x00020420,    // RAM starts after 128KB code
-        ram_size_bytes: 262144,           // 256KB for kernel data
+        flash_size_bytes: 130016,         // ~126KB (ends at 0x00020000, power-of-2 boundary)
+        ram_start_address: 0x00060000,    // After all flash regions (power-of-2 aligned)
+        ram_size_bytes: 131072,           // 128KB
     },
     apps: [
         {
             name: "initiator",
-            flash_size_bytes: 65536,      // 64KB for initiator app
-            ram_size_bytes: 16384,        // 16KB RAM for initiator
+            flash_size_bytes: 131072,     // 128KB for initiator app (power-of-2 aligned)
+            ram_size_bytes: 32768,        // 32KB RAM for initiator
             process: {
                 name: "initiator process",
                 objects: [
@@ -62,8 +68,8 @@
         },
         {
             name: "handler",
-            flash_size_bytes: 65536,      // 64KB for handler app
-            ram_size_bytes: 16384,        // 16KB RAM for handler
+            flash_size_bytes: 131072,     // 128KB for handler app (power-of-2 aligned)
+            ram_size_bytes: 32768,        // 32KB RAM for handler
             process: {
                 name: "handler process",
                 objects: [
