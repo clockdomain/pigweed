@@ -13,18 +13,25 @@
 // the License.
 
 // ASPEED AST1030 IPC test configuration
-// ARM Cortex-M4 @ 200 MHz with 640KB usable SRAM
+// ARM Cortex-M4 @ 200 MHz with 768KB SRAM (0x00000000 - 0x000BFFFF)
 // NOTE: AST1030 does not support XIP - ROM code copies firmware from flash to RAM
 // and executes from RAM starting at 0x00000000
 // Reference: aspeed-rust memory.x
 //
-// Memory Layout (from test-baseline, avoids PMSAv7 subregion issues):
+// PMSAv7-Friendly Memory Layout:
+// The system generator places app flash after kernel flash, and app RAM after
+// kernel RAM. For PMSAv7 compatibility, regions must be at power-of-2 aligned
+// addresses to avoid MPU subregion overlap with kernel RAM.
+//
 //   0x00000000 - 0x00000420: Vector table (1056 bytes)
-//   0x00000420 - 0x00040420: Kernel code (256KB)
-//   0x00040420 - 0x000A0420: Kernel RAM (384KB)
-//   0x000A0420 - 0x000C0420: Initiator app code (128KB)
-//   0x000C0420 - 0x000E0420: Handler app code (128KB)
-//   0x000A0420+: App RAM (after kernel RAM)
+//   0x00000420 - 0x00020000: Kernel code (~126KB, ends at 128KB boundary)
+//   0x00020000 - 0x00040000: Initiator app code (128KB, power-of-2 aligned)
+//   0x00040000 - 0x00060000: Handler app code (128KB, power-of-2 aligned)
+//   0x00060000 - 0x00080000: Kernel RAM (128KB, after all flash)
+//   0x00080000 - 0x00088000: App RAM (32KB total)
+//
+// Total: 544KB, fits within AST1030's 768KB SRAM.
+// Validated with: python3 pw_kernel/target/ast1030/ipc/user/validate_memory_layout.py
 {
     arch: {
         type: "armv7m",
@@ -32,10 +39,10 @@
         vector_table_size_bytes: 1056,  // 0x420
     },
     kernel: {
-        flash_start_address: 0x00000420,  // After vector table (per aspeed-rust)
-        flash_size_bytes: 262144,         // 256KB for kernel code (in RAM)
-        ram_start_address: 0x00040420,    // RAM for data starts after 256KB code (0x420 + 0x40000)
-        ram_size_bytes: 393216,           // Remaining RAM: 640KB - 256KB - 1KB = 383KB, round to 384KB
+        flash_start_address: 0x00000420,  // After vector table
+        flash_size_bytes: 130016,         // ~126KB (ends at 0x00020000, power-of-2 boundary)
+        ram_start_address: 0x00060000,    // After all flash regions (power-of-2 aligned)
+        ram_size_bytes: 131072,           // 128KB
     },
     apps: {
         initiator: {
