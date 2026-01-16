@@ -23,8 +23,10 @@ use minijinja::{Environment, State};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+pub mod mpu_validation;
 pub mod system_config;
 
+use mpu_validation::{MpuValidationMode, validate_pmsav7_layout, format_pmsav7_analysis, suggest_pmsav7_friendly_layout};
 use system_config::SystemConfig;
 
 #[derive(Debug, Parser)]
@@ -68,9 +70,22 @@ pub struct AppLinkerScriptArgs {
     pub app_name: String,
 }
 
+/// MPU architecture type for validation purposes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MpuArchitecture {
+    /// ARMv7-M PMSAv7 (power-of-2 regions with subregion disable)
+    Pmsav7,
+    /// ARMv8-M PMSAv8 (arbitrary regions with 32-byte granularity)
+    Pmsav8,
+    /// No MPU validation needed
+    None,
+}
+
 pub trait ArchConfigInterface {
     fn get_arch_crate_name(&self) -> &'static str;
     fn get_start_fn_address(&self, flash_start_address: u64) -> u64;
+    /// Returns the MPU architecture for this configuration.
+    fn get_mpu_architecture(&self) -> MpuArchitecture;
 }
 
 pub fn parse_config<A: ArchConfigInterface + DeserializeOwned>(
@@ -96,6 +111,10 @@ impl ArchConfigInterface for system_config::Armv8MConfig {
         // On Armv8M, the +1 is to denote thumb mode.
         flash_start_address + 1
     }
+
+    fn get_mpu_architecture(&self) -> MpuArchitecture {
+        MpuArchitecture::Pmsav8
+    }
 }
 
 impl ArchConfigInterface for system_config::Armv7MConfig {
@@ -107,6 +126,10 @@ impl ArchConfigInterface for system_config::Armv7MConfig {
         // On Armv7M, the +1 is to denote thumb mode.
         flash_start_address + 1
     }
+
+    fn get_mpu_architecture(&self) -> MpuArchitecture {
+        MpuArchitecture::Pmsav7
+    }
 }
 
 impl ArchConfigInterface for system_config::RiscVConfig {
@@ -116,6 +139,11 @@ impl ArchConfigInterface for system_config::RiscVConfig {
 
     fn get_start_fn_address(&self, flash_start_address: u64) -> u64 {
         flash_start_address
+    }
+
+    fn get_mpu_architecture(&self) -> MpuArchitecture {
+        // RISC-V PMP validation not yet implemented
+        MpuArchitecture::None
     }
 }
 
@@ -141,6 +169,7 @@ impl<'a, A: ArchConfigInterface + Serialize> SystemGenerator<'a, A> {
 
         instance.populate_addresses();
         instance.populate_interrupt_table()?;
+        instance.validate_mpu_layout()?;
 
         Ok(instance)
     }
@@ -230,6 +259,174 @@ impl<'a, A: ArchConfigInterface + Serialize> SystemGenerator<'a, A> {
             .max()
             .map(|max_irq| (max_irq.parse::<usize>().unwrap()) + 1)
             .unwrap_or(0);
+
+        Ok(())
+    }
+
+    /// Validate memory layout for MPU compatibility.
+    ///
+    /// This checks that the memory layout is compatible with the target's MPU
+    /// architecture. For PMSAv7 (ARMv7-M), this includes checking that MPU
+    /// subregions don't overlap with kernel memory.
+    fn validate_mpu_layout(&self) -> Result<()> {
+        let mpu_arch = self.config.arch.get_mpu_architecture();
+        let validation_mode = self.config.kernel.mpu_validation;
+
+        // Skip validation if mode is permissive or no MPU
+        if validation_mode == MpuValidationMode::Permissive || mpu_arch == MpuArchitecture::None {
+            return Ok(());
+        }
+
+        match mpu_arch {
+            MpuArchitecture::Pmsav7 => self.validate_pmsav7(),
+            MpuArchitecture::Pmsav8 => {
+                // PMSAv8 validation is less strict - just basic overlap checks
+                // TODO: Implement PMSAv8 region count validation
+                Ok(())
+            }
+            MpuArchitecture::None => Ok(()),
+        }
+    }
+
+    /// Validate memory layout for PMSAv7 compatibility.
+    fn validate_pmsav7(&self) -> Result<()> {
+        let validation_mode = self.config.kernel.mpu_validation;
+
+        // Build app list for validation
+        let apps: Vec<_> = self
+            .config
+            .apps
+            .iter()
+            .map(|(name, app)| {
+                (
+                    name.clone(),
+                    app.flash_start_address,
+                    app.flash_start_address + app.flash_size_bytes,
+                    app.ram_start_address,
+                    app.ram_start_address + app.ram_size_bytes,
+                )
+            })
+            .collect();
+
+        let kernel_flash_end =
+            self.config.kernel.flash_start_address + self.config.kernel.flash_size_bytes;
+        let kernel_ram_end =
+            self.config.kernel.ram_start_address + self.config.kernel.ram_size_bytes;
+
+        let issues = validate_pmsav7_layout(
+            self.config.kernel.flash_start_address,
+            kernel_flash_end,
+            self.config.kernel.ram_start_address,
+            kernel_ram_end,
+            &apps,
+        );
+
+        if issues.is_empty() {
+            return Ok(());
+        }
+
+        // Print detailed analysis for each problematic region
+        eprintln!("\n======================================================================");
+        eprintln!("MPU MEMORY LAYOUT VALIDATION");
+        eprintln!("======================================================================");
+
+        // Print memory layout
+        eprintln!("\nMemory Layout:");
+        eprintln!(
+            "  Kernel Flash: {:#010x} - {:#010x} ({}KB)",
+            self.config.kernel.flash_start_address,
+            kernel_flash_end,
+            self.config.kernel.flash_size_bytes / 1024
+        );
+        eprintln!(
+            "  Kernel RAM:   {:#010x} - {:#010x} ({}KB)",
+            self.config.kernel.ram_start_address,
+            kernel_ram_end,
+            self.config.kernel.ram_size_bytes / 1024
+        );
+        for (name, app) in &self.config.apps {
+            let flash_end = app.flash_start_address + app.flash_size_bytes;
+            let ram_end = app.ram_start_address + app.ram_size_bytes;
+            eprintln!(
+                "  App '{}' Flash: {:#010x} - {:#010x} ({}KB)",
+                name,
+                app.flash_start_address,
+                flash_end,
+                app.flash_size_bytes / 1024
+            );
+            eprintln!(
+                "  App '{}' RAM:   {:#010x} - {:#010x} ({}KB)",
+                name,
+                app.ram_start_address,
+                ram_end,
+                app.ram_size_bytes / 1024
+            );
+        }
+
+        // Print PMSAv7 analysis for affected regions
+        eprintln!("\n----------------------------------------------------------------------");
+        eprintln!("PMSAv7 SUBREGION ANALYSIS");
+        eprintln!("----------------------------------------------------------------------");
+
+        for (name, app) in &self.config.apps {
+            let flash_end = app.flash_start_address + app.flash_size_bytes;
+            eprintln!(
+                "\n{}",
+                format_pmsav7_analysis(
+                    &format!("App '{}' Flash", name),
+                    app.flash_start_address,
+                    flash_end
+                )
+            );
+        }
+
+        // Print issues
+        let has_errors = issues.iter().any(|i| i.code == "MPU001" || i.code == "MPU003");
+
+        eprintln!("\n----------------------------------------------------------------------");
+        eprintln!("VALIDATION ISSUES");
+        eprintln!("----------------------------------------------------------------------");
+
+        for issue in &issues {
+            let severity = if issue.code == "MPU001" || issue.code == "MPU003" {
+                "error"
+            } else {
+                "warning"
+            };
+            eprintln!("\n{}: {}", severity, issue);
+        }
+
+        // Print suggested layout
+        if has_errors {
+            let apps_for_suggestion: Vec<_> = self
+                .config
+                .apps
+                .iter()
+                .map(|(name, app)| (name.clone(), app.flash_size_bytes, app.ram_size_bytes))
+                .collect();
+
+            eprintln!("\n----------------------------------------------------------------------");
+            eprintln!(
+                "{}",
+                suggest_pmsav7_friendly_layout(
+                    0x420, // Typical vector table size
+                    self.config.kernel.flash_size_bytes,
+                    self.config.kernel.ram_size_bytes,
+                    &apps_for_suggestion,
+                )
+            );
+        }
+
+        eprintln!("======================================================================\n");
+
+        // Fail the build if strict mode and there are errors
+        if validation_mode == MpuValidationMode::Strict && has_errors {
+            return Err(anyhow!(
+                "MPU validation failed: {} issue(s) found. \
+                 Use 'mpu_validation: \"warn\"' in kernel config to allow builds with warnings.",
+                issues.len()
+            ));
+        }
 
         Ok(())
     }

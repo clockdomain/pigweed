@@ -15,7 +15,7 @@
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use system_generator::{ArchConfigInterface, Cli, SystemGenerator, system_config};
+use system_generator::{ArchConfigInterface, Cli, MpuArchitecture, SystemGenerator, system_config};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
@@ -43,6 +43,14 @@ impl ArchConfigInterface for ArchConfig {
             ArchConfig::Armv8M(config) => config.get_start_fn_address(flash_start_address),
             ArchConfig::Armv7M(config) => config.get_start_fn_address(flash_start_address),
             ArchConfig::RiscV(config) => config.get_start_fn_address(flash_start_address),
+        }
+    }
+
+    fn get_mpu_architecture(&self) -> MpuArchitecture {
+        match self {
+            ArchConfig::Armv8M(config) => config.get_mpu_architecture(),
+            ArchConfig::Armv7M(config) => config.get_mpu_architecture(),
+            ArchConfig::RiscV(config) => config.get_mpu_architecture(),
         }
     }
 }

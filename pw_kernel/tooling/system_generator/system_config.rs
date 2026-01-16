@@ -19,6 +19,7 @@ use hashlink::LinkedHashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::ArchConfigInterface;
+use crate::mpu_validation::MpuValidationMode;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -64,13 +65,16 @@ pub struct Armv7MNvicConfig {
 pub struct RiscVConfig;
 
 #[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct KernelConfig {
     pub flash_start_address: u64,
     pub flash_size_bytes: u64,
     pub ram_start_address: u64,
     pub ram_size_bytes: u64,
     pub interrupt_table: Option<InterruptTableConfig>,
+    /// MPU validation mode: "strict", "warn", or "permissive".
+    /// Defaults to "warn" for backward compatibility.
+    #[serde(default)]
+    pub mpu_validation: MpuValidationMode,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
