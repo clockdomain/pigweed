@@ -60,6 +60,34 @@ impl<K: Kernel, T> DerefMut for SpinLockGuard<'_, K, T> {
     }
 }
 
+/// A spinlock guard that does not manage preemption state.
+///
+/// This guard only holds the raw lock and does not increment/decrement
+/// `preempt_disable_count`. It is intended for use in exception handlers
+/// where preemption is already disabled by hardware.
+pub struct RawSpinLockGuard<'lock, K: Kernel, T> {
+    lock: &'lock SpinLock<K, T>,
+    _inner_guard: <<K as Arch>::BareSpinLock as BareSpinLock>::Guard<'lock>,
+}
+
+impl<K: Kernel, T> Deref for RawSpinLockGuard<'_, K, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        // Safety: We hold the lock
+        unsafe { &*self.lock.data.get() }
+    }
+}
+
+impl<K: Kernel, T> DerefMut for RawSpinLockGuard<'_, K, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        // Safety: We hold the lock
+        unsafe { &mut *self.lock.data.get() }
+    }
+}
+
+// Drop is automatic - just releases the inner lock, no preempt_disable_count manipulation
+
 pub struct SpinLock<K: Kernel, T> {
     data: UnsafeCell<T>,
     inner: K::BareSpinLock,
@@ -89,6 +117,26 @@ impl<K: Kernel, T> SpinLock<K, T> {
         SpinLockGuard {
             lock: self,
             _preempt_guard: PreemptDisableGuard::new(kernel),
+            _inner_guard: inner_guard,
+        }
+    }
+
+    /// Acquire the lock without incrementing `preempt_disable_count`.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that preemption is already disabled through
+    /// other means. This is typically only safe to call from:
+    /// - Exception handlers with interrupts disabled (`cpsid i`)
+    /// - Code already holding a `PreemptDisableGuard`
+    ///
+    /// Using this method in normal thread context without preemption
+    /// disabled can lead to priority inversion and deadlocks.
+    #[inline]
+    pub unsafe fn lock_no_preempt(&self) -> RawSpinLockGuard<'_, K, T> {
+        let inner_guard = self.inner.lock();
+        RawSpinLockGuard {
+            lock: self,
             _inner_guard: inner_guard,
         }
     }
