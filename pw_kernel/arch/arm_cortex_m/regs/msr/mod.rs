@@ -28,12 +28,12 @@ pub enum Spsel {
 }
 
 // Architecture-specific register definitions
-#[cfg(feature = "mpu_v7")]
+#[cfg(feature = "armv7m")]
 mod msr_v7;
-#[cfg(feature = "mpu_v7")]
+#[cfg(feature = "armv7m")]
 pub use msr_v7::*;
 
-#[cfg(feature = "mpu_v8")]
+#[cfg(feature = "armv8m")]
 mod msr_v8;
-#[cfg(feature = "mpu_v8")]
+#[cfg(feature = "armv8m")]
 pub use msr_v8::*;

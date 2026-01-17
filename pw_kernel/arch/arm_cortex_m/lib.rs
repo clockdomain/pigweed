@@ -28,11 +28,11 @@ mod threads;
 mod timer;
 
 // Architecture-specific protection modules
-#[cfg(feature = "mpu_v7")]
+#[cfg(feature = "armv7m")]
 #[path = "protection_v7.rs"]
 mod protection_impl;
 
-#[cfg(feature = "mpu_v8")]
+#[cfg(feature = "armv8m")]
 #[path = "protection_v8.rs"]
 mod protection_impl;
 

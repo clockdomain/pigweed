@@ -42,8 +42,8 @@ rust_library(
         "timer.rs",
     ],
     crate_features = ["user_space"] + select({
-        "@platforms//cpu:armv7-m": ["mpu_v7"],
-        "@platforms//cpu:armv8-m": ["mpu_v8"],
+        "@platforms//cpu:armv7-m": ["armv7m"],
+        "@platforms//cpu:armv8-m": ["armv8m"],
         "//conditions:default": [],
     }),
     edition = "2024",
@@ -84,8 +84,8 @@ rust_doc(
         "--document-private-items",
         "--cfg=feature=\"user_space\"",
         "--cfg=feature=\"arch_arm_cortex_m\"",
-        # Document with PMSAv8 by default (ARMv8-M)
-        "--cfg=feature=\"mpu_v8\"",
+        # Document with ARMv8-M by default
+        "--cfg=feature=\"armv8m\"",
     ],
     tags = ["kernel"],
 )
