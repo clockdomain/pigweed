@@ -587,3 +587,151 @@ One of these should happen:
 | 11 | SVCall |
 | 14 | PendSV |
 | 15 | SysTick |
+
+---
+
+## Latest Debug Session Results (2026-01-17)
+
+### Session Setup
+```gdb
+break HardFault      # Breakpoint 1 at 0x554
+break MemoryManagement  # Breakpoint 2 at 0x57c
+continue
+```
+
+### Result
+```
+Program received signal SIGINT, Interrupt.
+0x00000a44 in <target::Target as target_common::TargetInterface>::main ()
+```
+
+### Analysis
+
+**Where is the system stuck?**
+
+The kernel is stuck at address `0x00000a44` in `target::main()`. Looking at [target.rs](target.rs):
+
+```rust
+fn main() -> ! {
+    codegen::start();   // Sets up and starts user threads
+    #[expect(clippy::empty_loop)]
+    loop {}             // ← STUCK HERE (0x00000a44)
+}
+```
+
+This is **expected behavior** for a kernel that has launched user threads:
+1. `codegen::start()` creates and starts the initiator and handler threads
+2. The bootstrap thread then enters an infinite `loop {}` to wait
+3. User threads are supposed to run and eventually call `shutdown()`
+4. Since user threads never call `shutdown()`, the kernel spins forever
+
+**Why is this important?**
+
+This confirms:
+- ✅ The kernel is NOT stuck - it successfully started user threads and is waiting
+- ✅ No fault handlers were hit (HardFault at 0x554, MemManage at 0x57c were not triggered)
+- ❌ User threads are NOT making progress (otherwise they'd call `shutdown()`)
+
+**The Mystery Deepens**
+
+- Fault breakpoints were set but NOT hit
+- User threads were started (we see kernel logs for thread creation)
+- But user threads never complete their work
+
+This suggests user threads are either:
+1. **Stuck in an infinite loop** in user code (no fault, just spinning)
+2. **Stuck waiting** on something that never happens
+3. **Executing but context switches aren't working** to give them CPU time
+
+### New Hypothesis: Scheduler Not Running User Threads
+
+The kernel's bootstrap thread is in `loop {}`. User threads should be scheduled by:
+1. SysTick timer interrupts → trigger rescheduling
+2. PendSV exceptions → perform context switches
+
+**Possible issues:**
+- SysTick not configured correctly for AST1030?
+- PendSV not triggering context switches?
+- User threads in Ready state but never Running?
+
+### Next Debug Session: Verify User Threads Get CPU Time
+
+```gdb
+# Set breakpoints to trace execution flow
+break HardFault
+break MemoryManagement
+break *0x00020000        # Initiator _start
+break *0x00040000        # Handler _start
+break PendSV             # Context switch handler
+break SysTick            # Timer interrupt (if exists)
+
+continue
+
+# If we hit user _start breakpoints, threads ARE getting scheduled
+# If we never hit them, the scheduler isn't giving them CPU time
+
+# When at _start:
+info registers           # Check CONTROL=0x3 (user mode)
+disassemble $pc,+32      # See what code will execute
+stepi                    # Single-step through user code
+stepi
+stepi
+# Watch for where execution goes
+```
+
+### Key Question to Answer
+
+**Are user threads ever getting scheduled after initial creation?**
+
+From previous sessions, we hit breakpoints at `_start_initiator_0` (0x20000) and `_start_handler_1` (0x40000), which means YES, they do get scheduled initially.
+
+**So where do they go after that?**
+
+The user entry point `_start` does:
+1. `ldr r0, =_pw_static_init_ram_start`
+2. `bl memcpy` - initialize .data
+3. `bl memset` - zero .bss
+4. `bl main` - call user's main function
+
+If any of these fail silently, execution could be stuck.
+
+### Refined Hypothesis: User Code Stuck in Panic Handler
+
+Looking at user code [initiator.rs](../../../../tests/ipc/user/initiator.rs):
+
+```rust
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}  // ← Could be stuck here!
+}
+```
+
+If user code panics (e.g., due to failed memory access, assertion, etc.), it enters `loop {}` with NO output.
+
+**Test this hypothesis:**
+```gdb
+# Find the panic handler address in user binary
+info functions panic
+
+# Set breakpoint
+break <panic_handler_address>
+continue
+
+# If we hit this, user code is panicking!
+```
+
+### Summary
+
+| Component | Status |
+|-----------|--------|
+| Kernel boot | ✅ Working |
+| User thread creation | ✅ Working |
+| Initial context switch to user | ✅ Working (confirmed earlier) |
+| Fault handlers | ⚠️ Not triggered (good or bad?) |
+| User thread progress | ❌ NOT working |
+| Test completion | ❌ Never happens |
+
+**Most likely root cause:** User code execution fails silently, either in:
+- Panic handler (`loop {}`)
+- Some initialization code that hangs
+- A fault that doesn't trigger the handler (HardFault escalation to lockup?)
