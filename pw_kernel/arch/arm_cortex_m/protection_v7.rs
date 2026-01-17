@@ -323,8 +323,24 @@ impl MemoryConfig {
             region.write(&mut mpu, index);
         }
 
+        // Per ARMv7-M ARM (DDI 0403E.e) Section B3.5.1, a DSB followed by ISB
+        // is required after MPU configuration to ensure subsequent instructions
+        // use the new MPU settings.
+        //
+        // SAFETY: These are memory barrier instructions with no side effects
+        // other than ordering guarantees.
+        unsafe {
+            core::arch::asm!("dsb sy", options(nostack, preserves_flags));
+        }
+
         // Enable the MPU
         mpu.ctrl.write(mpu.ctrl.read().with_enable(true));
+
+        // Instruction barrier ensures the pipeline is flushed and refetched
+        // with the new MPU configuration active.
+        unsafe {
+            core::arch::asm!("isb sy", options(nostack, preserves_flags));
+        }
     }
 
     /// Log the details of the memory configuration.
