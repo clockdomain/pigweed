@@ -12,12 +12,19 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+//! ARMv8-M CONTROL register definition
+//!
+//! Per ARMv8-M ARM (DDI 0553) Section B3.1.4, the CONTROL register
+//! on ARMv8-M defines additional bits for TrustZone (SFPA),
+//! Branch Target Identification (BTI), and Pointer Authentication (PAC).
+
 use pw_cast::CastFrom as _;
 use regs::*;
 
-#[allow(unused_macros)]
-macro_rules! ro_msr_reg {
-    ($name:ident, $val_type:ident, $reg_ame:ident, $doc:literal) => {
+use super::Spsel;
+
+macro_rules! rw_msr_reg {
+    ($name:ident, $val_type:ident, $reg_name:ident, $doc:literal) => {
         #[doc=$doc]
         pub struct $name;
         impl $name {
@@ -29,14 +36,7 @@ macro_rules! ro_msr_reg {
                 };
                 $val_type(u32::cast_from(val))
             }
-        }
-    };
-}
 
-macro_rules! rw_msr_reg {
-    ($name:ident, $val_type:ident, $reg_name:ident, $doc:literal) => {
-        ro_msr_reg!($name, $val_type, $reg_name, $doc);
-        impl $name {
             #[allow(dead_code)]
             #[inline]
             pub fn write(val: $val_type) {
@@ -48,14 +48,6 @@ macro_rules! rw_msr_reg {
             }
         }
     };
-}
-
-/// Stack-pointer selection
-#[allow(dead_code)]
-#[repr(u32)]
-pub enum Spsel {
-    Main = 0,
-    Process = 1,
 }
 
 #[derive(Copy, Clone, Default)]
