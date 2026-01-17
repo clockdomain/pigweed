@@ -438,7 +438,12 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
     }
 
     // Return the arch frame for the current thread
-    let mut sched_state = crate::Arch.get_scheduler().lock(crate::Arch);
+    //
+    // SAFETY: PendSV runs with interrupts disabled (cpsid i via
+    // disable_interrupts attribute), so preemption is already impossible.
+    // Using lock_no_preempt() avoids the preempt_disable_count manipulation
+    // that caused ordering issues between ARMv7-M and ARMv8-M.
+    let mut sched_state = unsafe { crate::Arch.get_scheduler().lock_no_preempt() };
     let new_thread = unsafe { sched_state.get_current_arch_thread_state() };
     log_if::info_if!(
         LOG_CONTEXT_SWITCH,
