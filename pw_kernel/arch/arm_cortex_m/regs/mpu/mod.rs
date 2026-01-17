@@ -24,14 +24,14 @@
 use regs::*;
 
 // Architecture-specific register definitions
-#[cfg(feature = "mpu_v7")]
+#[cfg(feature = "armv7m")]
 mod mpu_v7;
-#[cfg(feature = "mpu_v7")]
+#[cfg(feature = "armv7m")]
 pub use mpu_v7::*;
 
-#[cfg(feature = "mpu_v8")]
+#[cfg(feature = "armv8m")]
 mod mpu_v8;
-#[cfg(feature = "mpu_v8")]
+#[cfg(feature = "armv8m")]
 pub use mpu_v8::*;
 
 /// Memory Protection Unit register bank
@@ -49,19 +49,19 @@ pub struct Mpu {
     pub rbar: Rbar,
 
     /// Region Limit Address Register (PMSAv8 only)
-    #[cfg(feature = "mpu_v8")]
+    #[cfg(feature = "armv8m")]
     pub rlar: Rlar,
 
     /// Region Attribute and Size Register (PMSAv7 only)
-    #[cfg(feature = "mpu_v7")]
+    #[cfg(feature = "armv7m")]
     pub rasr: Rasr,
 
     /// Memory Attribute Indirection Register 0 (PMSAv8 only)
-    #[cfg(feature = "mpu_v8")]
+    #[cfg(feature = "armv8m")]
     pub mair0: Mair0,
 
     /// Memory Attribute Indirection Register 1 (PMSAv8 only)
-    #[cfg(feature = "mpu_v8")]
+    #[cfg(feature = "armv8m")]
     pub mair1: Mair1,
 }
 
@@ -72,13 +72,13 @@ impl Mpu {
             ctrl: Ctrl,
             rnr: Rnr,
             rbar: Rbar,
-            #[cfg(feature = "mpu_v8")]
+            #[cfg(feature = "armv8m")]
             rlar: Rlar,
-            #[cfg(feature = "mpu_v7")]
+            #[cfg(feature = "armv7m")]
             rasr: Rasr,
-            #[cfg(feature = "mpu_v8")]
+            #[cfg(feature = "armv8m")]
             mair0: Mair0,
-            #[cfg(feature = "mpu_v8")]
+            #[cfg(feature = "armv8m")]
             mair1: Mair1,
         }
     }
