@@ -128,14 +128,17 @@ impl Arch for crate::Arch {
 
         // Remember active_thread only if it wasn't already set and trigger
         // a pendsv only the first time
-        unsafe {
+        let did_set_pendsv = unsafe {
             if get_active_thread().is_null() {
                 set_active_thread(old_thread_state);
 
                 // Queue a PendSV
                 SCB::set_pendsv();
+                true
+            } else {
+                false
             }
-        }
+        };
 
         // Slightly different path based on if we're already inside an interrupt handler or not.
         if !in_interrupt_handler() {
@@ -157,8 +160,10 @@ impl Arch for crate::Arch {
             // old thread is context switched back to.
 
             sched_state = crate::Arch::get_scheduler(crate::Arch).lock(crate::Arch);
-        } else {
-            // in interrupt context the pendsv should have already triggered it
+        } else if did_set_pendsv {
+            // In interrupt context, verify PendSV is pending only if we set it.
+            // If a context switch was already queued (active_thread was not null),
+            // PendSV may have been consumed by a previous handler.
             pw_assert::assert!(SCB::is_pendsv_pending());
         }
         sched_state
@@ -463,6 +468,19 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
     drop(sched_state);
 
     unsafe { THREAD_LOCAL_STATE = NonNull::from_ref(&(*new_thread).local) }
+
+    // Debug: dump the kernel exception frame we're about to return to
+    #[cfg(feature = "user_space")]
+    {
+        let frame = unsafe { &*(*new_thread).frame };
+        log_if::info_if!(
+            LOG_CONTEXT_SWITCH,
+            "KernelFrame: psp={:#010x} control={:#010x} ret_addr={:#010x}",
+            frame.psp as u32,
+            frame.control.0 as u32,
+            frame.return_address as u32
+        );
+    }
 
     unsafe { (*new_thread).frame }
 }
