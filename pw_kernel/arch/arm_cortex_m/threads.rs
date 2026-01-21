@@ -65,6 +65,16 @@ pub struct ArchThreadState {
     frame: *mut KernelExceptionFrame,
     memory_config: *const MemoryConfig,
     local: ThreadLocalState<crate::Arch>,
+    /// The canonical CONTROL register value for this thread.
+    /// This is an invariant property set at thread creation:
+    /// - User threads: 0x03 (nPRIV=1, SPSEL=1)
+    /// - Kernel threads: 0x00 (nPRIV=0, SPSEL=0)
+    /// 
+    /// We store this explicitly because the live CONTROL register may be
+    /// temporarily modified during syscall processing (privilege elevation),
+    /// and PendSV must restore the canonical value, not the transient one.
+    #[cfg(feature = "user_space")]
+    pub canonical_control: ControlVal,
 }
 
 impl ArchThreadState {
@@ -97,6 +107,12 @@ impl ArchThreadState {
             (*kernel_frame).return_address = return_address.bits().cast_into();
         }
         self.frame = kernel_frame;
+        // Store the canonical CONTROL value for this thread.
+        // This is the authoritative value that PendSV will restore.
+        #[cfg(feature = "user_space")]
+        {
+            self.canonical_control = control;
+        }
     }
 }
 
@@ -289,6 +305,8 @@ impl kernel::scheduler::thread::ThreadState for ArchThreadState {
         frame: core::ptr::null_mut(),
         memory_config: core::ptr::null(),
         local: ThreadLocalState::new(),
+        #[cfg(feature = "user_space")]
+        canonical_control: ControlVal(0),
     };
 
     unsafe fn initialize_kernel_frame(
@@ -468,6 +486,21 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
     drop(sched_state);
 
     unsafe { THREAD_LOCAL_STATE = NonNull::from_ref(&(*new_thread).local) }
+
+    // Overwrite the frame's control field with the thread's canonical value.
+    // This is critical: the frame's control may have been corrupted if PendSV
+    // fired during syscall processing (when SVCall temporarily elevates privilege).
+    //
+    // The canonical_control value is set at thread creation and never changes:
+    // - User threads: 0x03 (nPRIV=1, SPSEL=1)
+    // - Kernel threads: 0x00 (nPRIV=0, SPSEL=0)
+    //
+    // The macro-generated restore code will then pop this value and write it
+    // to the CONTROL register.
+    #[cfg(feature = "user_space")]
+    unsafe {
+        (*(*new_thread).frame).control = (*new_thread).canonical_control;
+    }
 
     // Debug: dump the kernel exception frame we're about to return to
     #[cfg(feature = "user_space")]
