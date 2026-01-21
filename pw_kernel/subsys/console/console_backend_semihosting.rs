@@ -19,8 +19,36 @@ use pw_status::{Error, Result};
 #[cfg(feature = "arch_riscv")]
 use riscv_semihosting::hio::hstdout;
 
+/// Check if interrupts are disabled (PRIMASK=1 on ARM Cortex-M).
+///
+/// Semihosting requires interrupts to be enabled to complete properly.
+/// When called with interrupts disabled, semihosting blocks indefinitely.
+#[cfg(feature = "arch_arm_cortex_m")]
+#[inline]
+fn interrupts_disabled() -> bool {
+    cortex_m::register::primask::read().is_active()
+}
+
+/// RISC-V implementation - check machine interrupt enable bit.
+/// TODO: Implement proper RISC-V interrupt state check if needed.
+#[cfg(feature = "arch_riscv")]
+#[inline]
+fn interrupts_disabled() -> bool {
+    // For now, always allow logging on RISC-V.
+    // If RISC-V semihosting has similar issues, this can be updated
+    // to check the mstatus.MIE bit.
+    false
+}
+
 #[unsafe(no_mangle)]
 pub fn console_backend_write_all(buf: &[u8]) -> Result<()> {
+    // Skip semihosting if interrupts are disabled to prevent blocking.
+    // Semihosting requires debugger/QEMU interaction which may depend on
+    // interrupts being enabled. Logging with PRIMASK=1 causes hangs.
+    if interrupts_disabled() {
+        return Ok(());
+    }
+
     let mut stdout = hstdout().map_err(|_| Error::Unavailable)?;
     stdout.write_all(buf).map_err(|_| Error::DataLoss)?;
     Ok(())

@@ -57,8 +57,14 @@ rust_library(
     deps = [
         "//pw_status/rust:pw_status",
     ] + select({
-        "@platforms//cpu:armv7-m": ["@rust_crates//:cortex-m-semihosting"],
-        "@platforms//cpu:armv8-m": ["@rust_crates//:cortex-m-semihosting"],
+        "@platforms//cpu:armv7-m": [
+            "@rust_crates//:cortex-m",
+            "@rust_crates//:cortex-m-semihosting",
+        ],
+        "@platforms//cpu:armv8-m": [
+            "@rust_crates//:cortex-m",
+            "@rust_crates//:cortex-m-semihosting",
+        ],
         "@platforms//cpu:riscv32": ["@rust_crates//:riscv-semihosting"],
         "//conditions:default": [],
     }),
