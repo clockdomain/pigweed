@@ -26,7 +26,10 @@ use riscv_semihosting::hio::hstdout;
 #[cfg(feature = "arch_arm_cortex_m")]
 #[inline]
 fn interrupts_disabled() -> bool {
-    cortex_m::register::primask::read().is_active()
+    // Note: is_active() means "exceptions are active" (interrupts ENABLED),
+    // not "PRIMASK is active". We need is_inactive() to detect when
+    // interrupts are disabled (PRIMASK bit set).
+    cortex_m::register::primask::read().is_inactive()
 }
 
 /// RISC-V implementation - check machine interrupt enable bit.
