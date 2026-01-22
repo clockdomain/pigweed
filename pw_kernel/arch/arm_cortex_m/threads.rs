@@ -487,20 +487,18 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
 
     unsafe { THREAD_LOCAL_STATE = NonNull::from_ref(&(*new_thread).local) }
 
-    // Overwrite the frame's control field with the thread's canonical value.
-    // This is critical: the frame's control may have been corrupted if PendSV
-    // fired during syscall processing (when SVCall temporarily elevates privilege).
+    // NOTE: The canonical_control overwrite has been disabled because it causes
+    // hangs on ARMv8-M (Cortex-M33). The original intent was to restore the
+    // canonical CONTROL value in case PendSV fired during syscall processing
+    // when privilege was temporarily elevated. However, this approach doesn't
+    // work correctly on ARMv8-M, possibly due to differences in CONTROL register
+    // handling or additional bits (SFPA, BTI, PAC) that shouldn't be touched.
     //
-    // The canonical_control value is set at thread creation and never changes:
-    // - User threads: 0x03 (nPRIV=1, SPSEL=1)
-    // - Kernel threads: 0x00 (nPRIV=0, SPSEL=0)
-    //
-    // The macro-generated restore code will then pop this value and write it
-    // to the CONTROL register.
-    #[cfg(feature = "user_space")]
-    unsafe {
-        (*(*new_thread).frame).control = (*new_thread).canonical_control;
-    }
+    // TODO: Investigate proper ARMv8-M CONTROL register handling during context switch.
+    // #[cfg(feature = "user_space")]
+    // unsafe {
+    //     (*(*new_thread).frame).control = (*new_thread).canonical_control;
+    // }
 
     // Debug: dump the kernel exception frame we're about to return to
     #[cfg(feature = "user_space")]
