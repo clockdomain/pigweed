@@ -75,6 +75,15 @@ pub struct ArchThreadState {
     /// and PendSV must restore the canonical value, not the transient one.
     #[cfg(feature = "user_space")]
     pub canonical_control: ControlVal,
+    /// The canonical EXC_RETURN value for this thread.
+    /// This is an invariant property set at thread creation:
+    /// - User threads: 0xFFFFFFFD (Thread mode, PSP, standard frame)
+    /// - Kernel threads: 0xFFFFFFF9 (Thread mode, MSP, standard frame)
+    ///
+    /// We store this explicitly because PendSV may capture a wrong EXC_RETURN
+    /// if it fires during syscall processing (when we're in Thread mode using MSP).
+    #[cfg(feature = "user_space")]
+    pub canonical_return_address: u32,
 }
 
 impl ArchThreadState {
@@ -112,6 +121,7 @@ impl ArchThreadState {
         #[cfg(feature = "user_space")]
         {
             self.canonical_control = control;
+            self.canonical_return_address = return_address.bits().cast_into();
         }
     }
 }
@@ -307,6 +317,8 @@ impl kernel::scheduler::thread::ThreadState for ArchThreadState {
         local: ThreadLocalState::new(),
         #[cfg(feature = "user_space")]
         canonical_control: ControlVal(0),
+        #[cfg(feature = "user_space")]
+        canonical_return_address: 0,
     };
 
     unsafe fn initialize_kernel_frame(
@@ -501,6 +513,11 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
     #[cfg(all(feature = "user_space", feature = "armv7m"))]
     unsafe {
         (*(*new_thread).frame).control = (*new_thread).canonical_control;
+        // Also restore the canonical EXC_RETURN value (return_address).
+        // PendSV may have captured a wrong EXC_RETURN if it fired during syscall
+        // processing when we're in Thread mode using MSP (EXC_RETURN=0xFFFFFFF9).
+        // User threads need EXC_RETURN with SP_SEL=1 to return via PSP.
+        (*(*new_thread).frame).return_address = (*new_thread).canonical_return_address;
     }
 
     // Debug: dump the kernel exception frame we're about to return to
