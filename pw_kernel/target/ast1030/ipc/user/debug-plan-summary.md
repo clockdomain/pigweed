@@ -566,22 +566,35 @@ And **remove** the existing fix code near line 528-533 that applies to `new_thre
 | Target | Architecture | Test | Result | Notes |
 |--------|--------------|------|--------|-------|
 | MPS2-AN505 | ARMv8-M (Cortex-M33) | IPC | ✅ PASS | Full test passes |
-| MPS2-AN505 | ARMv8-M (Cortex-M33) | hello_user | ✅ PASS | Minimal user mode test passes |
+| MPS2-AN505 | ARMv8-M (Cortex-M33) | hello_user | ✅ PASS | 100 syscalls pass |
 | AST1030 | ARMv7-M (Cortex-M4) | IPC | ❌ FAIL | MemoryManagement exception |
-| AST1030 | ARMv7-M (Cortex-M4) | hello_user | ✅ PASS | User mode entry + syscalls work! |
+| AST1030 | ARMv7-M (Cortex-M4) | hello_user (basic) | ✅ PASS | Initial entry + few syscalls work |
+| AST1030 | ARMv7-M (Cortex-M4) | hello_user (stress) | ❌ FAIL | Crashes after ~25-50 syscalls |
 
-### Key Finding: Bug is IPC-Specific
+### Key Finding: Bug is Syscall-Related, NOT IPC-Specific
 
-The hello_user test **passes** on AST1030, which proves:
-1. ✅ Initial user mode entry works correctly
-2. ✅ CONTROL register is set correctly on first entry (0x3)
-3. ✅ Simple syscalls work (logging uses syscalls)
-4. ✅ Context switches between kernel and single user thread work
+The hello_user stress test **crashes** on AST1030 after ~25-50 syscalls:
+```
+[INF] Completed 25 syscalls
+[INF] HardFault exception triggered: HFSR=0x40000000
+[INF] psp 0x00000000 control 0x00000000 return_address 0xfffffff9
+```
 
-The bug **only occurs** with the IPC test, which suggests:
-- The corruption happens during **multi-process context switches**
-- Specifically when switching between **two different user processes** (initiator ↔ handler)
-- The PendSV handler correctly saves/restores for kernel↔user, but fails for user↔user
+**Crash characteristics:**
+- `psp = 0x00000000` - PSP is NULL (user stack pointer lost!)
+- `control = 0x00000000` - Kernel mode (should be 0x3 for user mode)
+- `return_address = 0xfffffff9` - EXC_RETURN for MSP thread mode
+
+This is **different** from the IPC crash (which showed `control=0x1`), but proves:
+1. ✅ Bug is NOT specific to multi-process IPC
+2. ✅ Bug is reproducible with single user thread + many syscalls  
+3. ✅ Bug is cumulative - doesn't happen immediately, builds up over time
+4. ✅ Bug corrupts PSP to NULL and CONTROL to kernel mode
+
+**Minimal reproduction:**
+- Single user process with one thread
+- Loop calling `syscall::debug_nop()` ~25-50 times
+- Crashes on ARMv7-M (AST1030), passes on ARMv8-M (MPS2-AN505)
 
 ---
 

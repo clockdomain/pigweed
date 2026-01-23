@@ -31,6 +31,18 @@ fn entry() -> ! {
     // Now test a simple syscall (logging uses syscalls)
     pw_log::info!("Testing syscalls via logging...");
 
+    // Stress test: Do many syscalls in a loop to trigger potential
+    // context switch issues. Each debug_nop() is a syscall that could
+    // trigger PendSV if there's a higher-priority thread ready.
+    pw_log::info!("Stress testing with 100 nop syscalls...");
+    for i in 0..100 {
+        let _ = syscall::debug_nop();
+        if i % 25 == 0 {
+            pw_log::info!("Completed {} syscalls", i as u32);
+        }
+    }
+    pw_log::info!("All 100 syscalls completed successfully!");
+
     // Signal test passed and exit
     pw_log::info!("✅ PASSED: User mode works correctly!");
     let _ = syscall::debug_shutdown(Ok(()));
