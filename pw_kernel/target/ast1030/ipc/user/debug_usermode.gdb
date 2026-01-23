@@ -68,6 +68,51 @@ Dump KernelExceptionFrame at the given address.
 Usage: dump_kef <address>
 end
 
+# Helper to dump PendSV frame (FullExceptionFrame passed to pendsv_swap_sp in r0)
+define dump_pendsv_frame
+  set $addr = $r0
+  printf "=== PendSV FullExceptionFrame at 0x%08x ===\n", $addr
+  printf "r4 =0x%08x  r5 =0x%08x  r6 =0x%08x  r7 =0x%08x\n", *(unsigned int*)($addr+0x00), *(unsigned int*)($addr+0x04), *(unsigned int*)($addr+0x08), *(unsigned int*)($addr+0x0C)
+  printf "r8 =0x%08x  r9 =0x%08x  r10=0x%08x  r11=0x%08x\n", *(unsigned int*)($addr+0x10), *(unsigned int*)($addr+0x14), *(unsigned int*)($addr+0x18), *(unsigned int*)($addr+0x1C)
+  set $psp_val = *(unsigned int*)($addr+0x20)
+  set $ctrl_val = *(unsigned int*)($addr+0x24)
+  set $exc_ret = *(unsigned int*)($addr+0x28)
+  printf "psp=0x%08x  control=0x%08x  exc_return=0x%08x\n", $psp_val, $ctrl_val, $exc_ret
+  printf "\n"
+  # Decode CONTROL
+  printf "CONTROL decode: nPRIV=%d SPSEL=%d", $ctrl_val & 1, ($ctrl_val >> 1) & 1
+  if $ctrl_val == 0
+    printf " [KERNEL MODE]\n"
+  end
+  if $ctrl_val == 3
+    printf " [USER MODE - correct]\n"
+  end
+  if $ctrl_val == 2
+    printf " [PRIVILEGED+PSP - CORRUPTED?]\n"
+  end
+  if $ctrl_val == 1
+    printf " [UNPRIVILEGED+MSP - INVALID!]\n"
+  end
+  # Decode EXC_RETURN
+  printf "EXC_RETURN decode: "
+  if $exc_ret == 0xFFFFFFF9
+    printf "Return to Handler mode, MSP\n"
+  end
+  if $exc_ret == 0xFFFFFFFD
+    printf "Return to Thread mode, PSP [USER]\n"
+  end
+  if $exc_ret == 0xFFFFFFE9
+    printf "Return to Handler mode, MSP (FPU)\n"
+  end
+  if $exc_ret == 0xFFFFFFED
+    printf "Return to Thread mode, PSP (FPU) [USER]\n"
+  end
+end
+document dump_pendsv_frame
+Dump the FullExceptionFrame passed to pendsv_swap_sp (uses r0).
+Call this when stopped inside pendsv_swap_sp.
+end
+
 # Helper to dump hardware ExceptionFrame at given address (what hardware pushes/pops)
 define dump_ef
   if $argc != 1

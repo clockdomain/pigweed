@@ -30,8 +30,14 @@ fn test_uppercase_ipcs() -> Result<()> {
 
         // Encode the character into `send_buf` and send it over to the handler.
         c.encode_utf8(&mut send_buf);
-        let len: usize =
-            syscall::channel_transact(handle::IPC, &send_buf, &mut recv_buf, Instant::MAX)?;
+        pw_log::info!("Initiator: sending char {}", c as u32);
+        let transact_result = syscall::channel_transact(handle::IPC, &send_buf, &mut recv_buf, Instant::MAX);
+        if let Ok(n) = transact_result {
+            pw_log::info!("Initiator: transact returned {} bytes", n as u32);
+        } else {
+            pw_log::error!("Initiator: transact FAILED");
+        }
+        let len: usize = transact_result?;
 
         // The handler side always sends 8 bytes to make up two full Rust `char`s
         if len != RECV_BUF_LEN {

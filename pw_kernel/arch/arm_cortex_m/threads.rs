@@ -12,6 +12,19 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+// Compile-time feature detection assertions
+#[cfg(all(feature = "user_space", not(feature = "armv7m"), not(feature = "armv8m")))]
+compile_error!("FEATURE CHECK: user_space enabled but neither armv7m nor armv8m!");
+
+#[cfg(all(feature = "armv7m", feature = "armv8m"))]
+compile_error!("FEATURE CHECK: Both armv7m and armv8m features enabled - invalid!");
+
+#[cfg(all(feature = "armv7m", not(feature = "user_space")))]
+compile_error!("FEATURE CHECK: armv7m enabled but user_space NOT enabled!");
+
+#[cfg(not(feature = "user_space"))]
+compile_error!("FEATURE CHECK: user_space feature is NOT enabled!");
+
 use core::arch::asm;
 use core::mem::{self, MaybeUninit};
 use core::ptr::NonNull;
@@ -469,6 +482,25 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
     unsafe {
         (*active_thread).frame = frame;
 
+        // ARMv7-M fix: Restore canonical CONTROL/EXC_RETURN values to the
+        // ACTIVE thread's frame. The frame we just saved may have corrupted
+        // values if PendSV fired during syscall processing (when SVCall
+        // temporarily elevates privilege by setting CONTROL.nPRIV=0).
+        //
+        // This must be done HERE, to the thread being switched OUT, not to
+        // the thread being switched IN. The corruption is in the interrupted
+        // thread's saved state.
+        //
+        // NOTE: This is ONLY needed on ARMv7-M. On ARMv8-M (Cortex-M33+),
+        // the CONTROL register has additional bits (SFPA, BTI, PAC) that
+        // must be preserved, so we cannot simply overwrite with canonical.
+        #[cfg(all(feature = "user_space", feature = "armv7m"))]
+        {
+            let saved_frame = &mut *(*active_thread).frame;
+            saved_frame.control = (*active_thread).canonical_control;
+            saved_frame.return_address = (*active_thread).canonical_return_address;
+        }
+
         set_active_thread(core::ptr::null_mut());
     }
 
@@ -480,6 +512,7 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
     // that caused ordering issues between ARMv7-M and ARMv8-M.
     let mut sched_state = unsafe { crate::Arch.get_scheduler().lock_no_preempt() };
     let new_thread = unsafe { sched_state.get_current_arch_thread_state() };
+    info!("PENDSV: got new_thread");
     log_if::info_if!(
         LOG_CONTEXT_SWITCH,
         "Context switch to thread '{}' ({:#010x})",
@@ -498,27 +531,6 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
     drop(sched_state);
 
     unsafe { THREAD_LOCAL_STATE = NonNull::from_ref(&(*new_thread).local) }
-
-    // Overwrite the frame's control field with the thread's canonical value.
-    // This is critical for ARMv7-M: the frame's control may have been corrupted if PendSV
-    // fired during syscall processing (when SVCall temporarily elevates privilege).
-    //
-    // The canonical_control value is set at thread creation and never changes:
-    // - User threads: 0x03 (nPRIV=1, SPSEL=1)
-    // - Kernel threads: 0x00 (nPRIV=0, SPSEL=0)
-    //
-    // NOTE: This is ONLY applied on ARMv7-M. On ARMv8-M (Cortex-M33+), the CONTROL
-    // register has additional bits (SFPA, BTI, PAC) that we must preserve. Simply
-    // overwriting with the canonical value would clear these bits and cause hangs.
-    #[cfg(all(feature = "user_space", feature = "armv7m"))]
-    unsafe {
-        (*(*new_thread).frame).control = (*new_thread).canonical_control;
-        // Also restore the canonical EXC_RETURN value (return_address).
-        // PendSV may have captured a wrong EXC_RETURN if it fired during syscall
-        // processing when we're in Thread mode using MSP (EXC_RETURN=0xFFFFFFF9).
-        // User threads need EXC_RETURN with SP_SEL=1 to return via PSP.
-        (*(*new_thread).frame).return_address = (*new_thread).canonical_return_address;
-    }
 
     // Debug: dump the kernel exception frame we're about to return to
     #[cfg(feature = "user_space")]

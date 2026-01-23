@@ -605,63 +605,323 @@ For ARMv8-M, the test passes without the fix, likely because:
 
 ## Appendix D: Post-Fix Status (January 22, 2026)
 
-### D.1 Test Results After canonical_return_address Fix
-
-After implementing both `canonical_control` and `canonical_return_address` fixes:
+### D.1 Current Test Results
 
 | Target | Architecture | Result | Notes |
 |--------|-------------|--------|-------|
 | MPS2-AN505 | Cortex-M33 (ARMv8-M) | ✅ PASSED | Full IPC exchange a-z → A-Z |
-| AST1030 | Cortex-M4 (ARMv7-M) | ❌ FAILED | New error: "Received 0 bytes, 8 expected" |
+| AST1030 | Cortex-M4 (ARMv7-M) | ❌ FAILED | MemoryManagement exception persists |
 
-### D.2 Progress Made
+### D.2 Critical Finding: Fix Code Not Compiled
 
-The `canonical_return_address` fix **resolved the MemoryManagement exception**:
-- No longer seeing `control=0x00000001` (invalid state)
-- No longer seeing `return_address=0xffffffe9` (wrong SP_SEL)
-- Test now proceeds past thread creation and context switching
+**The `canonical_control` and `canonical_return_address` fix code exists but is NOT being compiled into the AST1030 binary.**
 
-### D.3 New Issue: IPC Transaction Returns 0 Bytes
+#### Evidence
 
-The test now fails with:
+1. **Disassembly shows no canonical references:**
+   ```bash
+   $ arm-none-eabi-objdump -d ipc.elf | grep -i 'canonical'
+   (no output)
+   ```
+
+2. **PendSV still reads live CONTROL from hardware:**
+   ```asm
+   000005c8 <PendSV>:
+        5c8:   mrs     r1, CONTROL    ; ← Still reading live register!
+        5cc:   mrs     r0, PSP
+        5d0:   push    {r0, r1, lr}   ; ← Saving potentially corrupted values
+   ```
+
+3. **Test still shows original corruption:**
+   ```
+   [INF] MemoryManagement exception triggered: address=0x00060238
+   [INF] KernelFrame: psp=0x0008fea8 control=0x00000001 return_address=0xfffffffd
+   ```
+
+### D.3 Root Cause: Feature Flag Not Activated
+
+The fix is guarded by:
+```rust
+#[cfg(all(feature = "user_space", feature = "armv7m"))]
 ```
-[INF] 🔄 RUNNING
-[INF] Ipc test starting
-[INF] IPC service starting
-[ERR] Received 0 bytes, 8 expected
-[ERR] ❌ FAILED: 11
+
+The `armv7m` feature is defined in BUILD.bazel via select:
+```python
+crate_features = ["user_space"] + select({
+    "@platforms//cpu:armv7-m": ["armv7m"],
+    "@platforms//cpu:armv8-m": ["armv8m"],
+    "//conditions:default": [],
+}),
 ```
 
-Error code 11 = `OutOfRange` from [initiator.rs#L37-L42](pw_kernel/tests/ipc/user/initiator.rs#L37-L42)
+The AST1030 platform declares `@platforms//cpu:armv7-m`:
+```python
+platform(
+    name = "ast1030",
+    constraint_values = [
+        "@platforms//cpu:armv7-m",  # ← Correct
+        ...
+    ],
+)
+```
 
-#### IPC Flow Analysis
+**However, the select is not resolving correctly during build.** The `armv7m` feature is not being passed to rustc.
 
-1. **Initiator** calls `channel_transact(handle, &send_buf, &mut recv_buf, deadline)`
-2. **Kernel** stores transaction, signals handler with `READABLE`
-3. **Initiator** waits for `READABLE | ERROR` signals
-4. **Handler** wakes on `READABLE`, calls `channel_read` and `channel_respond`
-5. **Initiator** wakes, reads `recv_buffer.size()` → **returns 0 instead of 8**
+### D.4 Possible Causes of Feature Mismatch
 
-#### Possible Causes
+1. **Bazel transition issue**: The `arch_arm_cortex_m` library may be built with host platform constraints instead of target platform
+2. **Select evaluation timing**: The select may evaluate before platform is fully resolved
+3. **Dependency configuration**: The library may be pulled in through a dependency that doesn't respect platform flags
+4. **Caching issue**: Stale cached artifacts may not have the feature enabled
 
-1. **Handler never responded**: The handler may have failed before calling `channel_respond`
-2. **Signal delivery issue**: `READABLE` signal not properly delivered on ARMv7-M
-3. **Memory/MPU issue**: Buffer addresses may be inaccessible
-4. **Syscall return value corruption**: The return value from syscall may be corrupted
-5. **Timeout or race condition**: Different timing on ARMv7-M vs ARMv8-M
+### D.5 Verification Needed
 
-### D.4 Next Steps
+To confirm the feature flag issue:
+```bash
+# Check what features rustc receives during build
+$ bazelisk build --config=k_qemu_ast1030 //pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m \
+    --subcommands 2>&1 | grep 'cfg.*feature'
 
-1. Add debug logging to trace:
-   - Handler's `object_wait` return
-   - Handler's `channel_read` return value
-   - Handler's `channel_respond` execution
-   - Kernel-side transaction state
+# Or add compile-time assertion in threads.rs:
+#[cfg(all(feature = "user_space", not(feature = "armv7m"), not(feature = "armv8m")))]
+compile_error!("Neither armv7m nor armv8m feature enabled!");
+```
 
-2. Compare syscall sequences between passing (M33) and failing (M4) runs
+### D.6 Alternative Approach
 
-3. Check if this is related to remaining CONTROL/EXC_RETURN issues in other code paths
+If the Bazel select cannot be fixed, consider runtime detection instead:
+
+```rust
+// Runtime check instead of compile-time feature
+#[cfg(feature = "user_space")]
+unsafe {
+    // Check CPUID to determine ARMv7-M vs ARMv8-M
+    let cpuid = core::ptr::read_volatile(0xE000_ED00 as *const u32);
+    let part_number = (cpuid >> 4) & 0xFFF;
+    
+    // Cortex-M4 = 0xC24, Cortex-M33 = 0xD21
+    if part_number == 0xC24 {
+        (*(*new_thread).frame).control = (*new_thread).canonical_control;
+        (*(*new_thread).frame).return_address = (*new_thread).canonical_return_address;
+    }
+}
+```
+
+**Caveat**: Runtime detection adds overhead to every context switch.
+
+### D.7 Summary
+
+| Aspect | Status |
+|--------|--------|
+| Fix code written | ✅ Complete |
+| Fix code compiles | ❌ Feature not activated |
+| ARMv8-M (M33) works | ✅ No fix needed |
+| ARMv7-M (M4) works | ❌ Fix not compiled in |
+| Root cause identified | ✅ Bazel feature select |
+| Resolution | 🔧 Fix Bazel configuration or use runtime detection |
 
 ---
 
-*Issue captured: January 22, 2026*
+*Updated: January 22, 2026*
+
+---
+
+## Appendix E: Investigation Plan - Feature Flag Activation
+
+### E.1 Objective
+
+Determine why `#[cfg(feature = "armv7m")]` code is not being compiled into the AST1030 binary, and implement a fix.
+
+### E.2 Investigation Steps
+
+#### Step 1: Add Compile-Time Assertion
+
+Add a compile error to verify which features are active:
+
+```rust
+// In pw_kernel/arch/arm_cortex_m/threads.rs, add near top:
+
+#[cfg(all(feature = "user_space", not(feature = "armv7m"), not(feature = "armv8m")))]
+compile_error!("Neither armv7m nor armv8m feature enabled - check BUILD.bazel select!");
+
+#[cfg(all(feature = "armv7m", feature = "armv8m"))]
+compile_error!("Both armv7m and armv8m features enabled - invalid configuration!");
+```
+
+Build and observe which error (if any) triggers.
+
+#### Step 2: Inspect Bazel Configuration Resolution
+
+```bash
+# Check what configuration the arch library is built with
+bazelisk cquery --config=k_qemu_ast1030 \
+    "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m" \
+    --output=starlark \
+    --starlark:expr='str(target.label) + " -> " + str(providers(target))'
+
+# Check platform constraints
+bazelisk cquery --config=k_qemu_ast1030 \
+    "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m" \
+    --output=starlark \
+    --starlark:expr='str(ctx.configuration.platform)'
+```
+
+#### Step 3: Check if Library is Built in Host Config
+
+The library might be pulled as a tool dependency (built for host) rather than target:
+
+```bash
+# See all configurations the library is built in
+bazelisk cquery --config=k_qemu_ast1030 \
+    "deps(//pw_kernel/target/ast1030/ipc/user:ipc)" \
+    --output=graph 2>&1 | grep arch_arm_cortex_m
+```
+
+#### Step 4: Verify Select Resolution
+
+Add debug output to BUILD.bazel:
+
+```python
+# In pw_kernel/arch/arm_cortex_m/BUILD.bazel
+
+_FEATURES = select({
+    "@platforms//cpu:armv7-m": ["armv7m"],
+    "@platforms//cpu:armv8-m": ["armv8m"],
+    "//conditions:default": [],
+})
+
+# Print during loading phase (will show in build output)
+print("arch_arm_cortex_m crate_features select result:", _FEATURES)
+
+rust_library(
+    name = "arch_arm_cortex_m",
+    crate_features = ["user_space"] + _FEATURES,
+    ...
+)
+```
+
+#### Step 5: Check for Bazel Transitions
+
+Search for any `cfg` or `transition` rules that might change platform:
+
+```bash
+grep -r "transition" pw_kernel/
+grep -r "cfg =" pw_kernel/**/*.bzl
+```
+
+#### Step 6: Direct Rustc Flag Inspection
+
+Force a rebuild and capture the actual rustc invocation:
+
+```bash
+bazelisk build --config=k_qemu_ast1030 \
+    //pw_kernel/target/ast1030/ipc/user:ipc \
+    --subcommands \
+    --noremote_accept_cached \
+    --noremote_upload_local_results \
+    2>&1 | grep -A5 "arch_arm_cortex_m.*rustc"
+```
+
+Look for `--cfg 'feature="armv7m"'` in the command line.
+
+### E.3 Potential Root Causes & Fixes
+
+#### Cause A: Select Evaluates Before Platform Resolution
+
+**Symptom:** `//conditions:default` branch taken
+
+**Fix:** Use a Bazel transition to explicitly set platform, or use `target_compatible_with` to enforce platform
+
+#### Cause B: Library Built for Exec (Host) Platform
+
+**Symptom:** Library built with host CPU constraints, not target
+
+**Fix:** Ensure library is listed in `deps`, not `tools` or `exec_deps`
+
+#### Cause C: rules_rust Not Propagating Features
+
+**Symptom:** Features defined but not passed to rustc
+
+**Fix:** Check rules_rust version, or manually add `rustc_flags = ["--cfg", "feature=\"armv7m\""]`
+
+#### Cause D: Platform Constraint Mismatch
+
+**Symptom:** `@platforms//cpu:armv7-m` doesn't match what the build uses
+
+**Fix:** Verify the exact constraint value syntax matches
+
+### E.4 Fallback Solutions
+
+If Bazel configuration cannot be fixed quickly:
+
+#### Fallback 1: Hardcode Feature for AST1030
+
+```python
+# In pw_kernel/arch/arm_cortex_m/BUILD.bazel
+rust_library(
+    name = "arch_arm_cortex_m",
+    crate_features = ["user_space", "armv7m"],  # Always enable
+    ...
+)
+```
+
+**Risk:** Breaks ARMv8-M builds
+
+#### Fallback 2: Runtime Detection
+
+```rust
+// In pendsv_swap_sp, detect architecture at runtime
+#[cfg(feature = "user_space")]
+unsafe {
+    // CPUID.PartNo: 0xC24 = Cortex-M4, 0xD21 = Cortex-M33
+    let cpuid = core::ptr::read_volatile(0xE000_ED00 as *const u32);
+    let part_no = (cpuid >> 4) & 0xFFF;
+    
+    let is_armv7m = matches!(part_no, 0xC23 | 0xC24 | 0xC27); // M3, M4, M7
+    
+    if is_armv7m {
+        (*(*new_thread).frame).control = (*new_thread).canonical_control;
+        (*(*new_thread).frame).return_address = (*new_thread).canonical_return_address;
+    }
+}
+```
+
+**Risk:** Runtime overhead on every context switch
+
+#### Fallback 3: Unconditional Fix with Masking
+
+```rust
+// Always apply fix, but preserve ARMv8-M extra bits
+#[cfg(feature = "user_space")]
+unsafe {
+    let frame = &mut *(*new_thread).frame;
+    // Preserve bits 3-7 (SFPA, etc.) on ARMv8-M, overwrite bits 0-2
+    let preserved_bits = frame.control.0 & 0xF8;
+    let canonical_bits = (*new_thread).canonical_control.0 & 0x07;
+    frame.control = ControlVal(preserved_bits | canonical_bits);
+    
+    // EXC_RETURN: only fix SP_SEL bit (bit 2)
+    let preserved_exc = frame.return_address & !0x04;
+    let canonical_sp_sel = (*new_thread).canonical_return_address & 0x04;
+    frame.return_address = preserved_exc | canonical_sp_sel;
+}
+```
+
+**Risk:** May still affect ARMv8-M security features
+
+### E.5 Success Criteria
+
+1. `bazelisk build` with AST1030 platform shows `--cfg 'feature="armv7m"'` in rustc command
+2. Disassembly of `pendsv_swap_sp` shows loads from `canonical_control` field
+3. AST1030 IPC test passes without MemoryManagement exception
+
+### E.6 Priority Order
+
+1. **Step 1** (5 min): Compile-time assertion to confirm the problem
+2. **Step 6** (10 min): Inspect actual rustc flags
+3. **Step 4** (10 min): Debug select resolution
+4. **Fallback 3** (15 min): If investigation stalls, use masking approach
+
+---
+
+*Investigation plan created: January 22, 2026*
