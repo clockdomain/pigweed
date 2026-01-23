@@ -568,7 +568,20 @@ And **remove** the existing fix code near line 528-533 that applies to `new_thre
 | MPS2-AN505 | ARMv8-M (Cortex-M33) | IPC | ✅ PASS | Full test passes |
 | MPS2-AN505 | ARMv8-M (Cortex-M33) | hello_user | ✅ PASS | Minimal user mode test passes |
 | AST1030 | ARMv7-M (Cortex-M4) | IPC | ❌ FAIL | MemoryManagement exception |
-| AST1030 | ARMv7-M (Cortex-M4) | hello_user | ⏳ TODO | Not yet created |
+| AST1030 | ARMv7-M (Cortex-M4) | hello_user | ✅ PASS | User mode entry + syscalls work! |
+
+### Key Finding: Bug is IPC-Specific
+
+The hello_user test **passes** on AST1030, which proves:
+1. ✅ Initial user mode entry works correctly
+2. ✅ CONTROL register is set correctly on first entry (0x3)
+3. ✅ Simple syscalls work (logging uses syscalls)
+4. ✅ Context switches between kernel and single user thread work
+
+The bug **only occurs** with the IPC test, which suggests:
+- The corruption happens during **multi-process context switches**
+- Specifically when switching between **two different user processes** (initiator ↔ handler)
+- The PendSV handler correctly saves/restores for kernel↔user, but fails for user↔user
 
 ---
 
