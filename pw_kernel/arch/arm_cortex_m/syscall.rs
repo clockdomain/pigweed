@@ -124,6 +124,10 @@ pub unsafe extern "C" fn SVCall() -> ! {
             bfc     r2, #0, #1
             msr     control, r2
 
+            // Note: ISB after CONTROL modification is typically recommended,
+            // but here we're about to do a bx lr (exception return) which
+            // implicitly synchronizes the pipeline. The ISB is omitted to
+            // avoid changing the timing behavior that was working before.
 
             // Push a fake exception frame to return from handler mode to
             // thread mode for the bulk of syscall processing.
@@ -205,12 +209,13 @@ pub unsafe extern "C" fn svc_return() -> ! {
             orr     r1, r1, 0x3
             msr     control, r1
 
-            // Per ARM's recommendations, an instruction barrier ensures that
-            // instructions executed after this point respect the dropping of
-            // the privilege level.
+            // Per ARM's recommendations, DSB ensures the write completes,
+            // and ISB ensures that instructions executed after this point
+            // respect the dropping of the privilege level.
             //
             // See https://developer.arm.com/documentation/107656/0101/Registers/Special-purpose-registers/CONTROL-register/Changing-privilege-level-using-the-CONTROL-register
 
+            dsb
             isb
 
 

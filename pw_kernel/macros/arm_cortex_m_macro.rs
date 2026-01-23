@@ -214,6 +214,11 @@ fn restore_exception_frame(asm: &mut String, kernel_mode: &KernelMode) {
         // NOTE: The control value (r1) restored here comes from the frame,
         // which has been overwritten with canonical_control by pendsv_swap_sp().
         // This ensures we always restore the thread's canonical CONTROL value.
+        //
+        // Best practice for CONTROL register updates (per ARM recommendations):
+        //   1. Write to CONTROL
+        //   2. DSB - ensures the write completes before proceeding
+        //   3. ISB - flushes pipeline so subsequent instructions see the change
         asm.push_str(
             "
             mov     sp, r0
@@ -222,6 +227,8 @@ fn restore_exception_frame(asm: &mut String, kernel_mode: &KernelMode) {
             pop     {{ r0 - r1 }}
             msr     psp, r0
             msr     control, r1
+            dsb                     // Ensure CONTROL write completes
+            isb                     // Flush pipeline to see the change
 
             pop     {{ pc }}
     ",
