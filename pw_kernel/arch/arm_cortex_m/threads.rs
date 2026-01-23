@@ -270,12 +270,16 @@ impl Arch for crate::Arch {
             // Note: Higher values have lower priority
             let mut scb = p.SCB;
 
-            // Set SVCall (system calls) to the lowest priority.
-            scb.set_priority(scb::SystemHandler::SVCall, 0b1111_1111);
+            // Set PendSV (used by context switching) to the lowest priority.
+            // This ensures PendSV cannot preempt SVCall, which is critical
+            // because SVCall uses fake exception frames that would be corrupted
+            // if PendSV preempted mid-setup.
+            scb.set_priority(scb::SystemHandler::PendSV, 0b1111_1111);
 
-            // Set PendSV (used by context switching) to just above SVCall so
-            // that system calls can context switch.
-            scb.set_priority(scb::SystemHandler::PendSV, 0b1011_1111);
+            // Set SVCall (system calls) to just above PendSV.
+            // This allows syscalls to complete without being preempted by
+            // context switches, while still being preemptable by IRQs.
+            scb.set_priority(scb::SystemHandler::SVCall, 0b1011_1111);
 
             // Set IRQs to a priority above SVCall and PendSV so that they
             // can preempt them.
