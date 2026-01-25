@@ -20,7 +20,6 @@ use userspace::time::Instant;
 use userspace::{entry, syscall};
 
 fn test_uppercase_ipcs() -> Result<()> {
-    pw_log::info!("Ipc test starting");
     for c in 'a'..='z' {
         const SEND_BUF_LEN: usize = size_of::<char>();
         const RECV_BUF_LEN: usize = size_of::<char>() * 2;
@@ -30,14 +29,7 @@ fn test_uppercase_ipcs() -> Result<()> {
 
         // Encode the character into `send_buf` and send it over to the handler.
         c.encode_utf8(&mut send_buf);
-        pw_log::info!("Initiator: sending char {}", c as u32);
-        let transact_result = syscall::channel_transact(handle::IPC, &send_buf, &mut recv_buf, Instant::MAX);
-        if let Ok(n) = transact_result {
-            pw_log::info!("Initiator: transact returned {} bytes", n as u32);
-        } else {
-            pw_log::error!("Initiator: transact FAILED");
-        }
-        let len: usize = transact_result?;
+        let len: usize = syscall::channel_transact(handle::IPC, &send_buf, &mut recv_buf, Instant::MAX)?;
 
         // The handler side always sends 8 bytes to make up two full Rust `char`s
         if len != RECV_BUF_LEN {
@@ -62,14 +54,6 @@ fn test_uppercase_ipcs() -> Result<()> {
             return Err(Error::InvalidArgument);
         };
         let char1: char = char1;
-
-        // Log the response character
-        pw_log::info!(
-            "Sent {}, received ({},{})",
-            c as char,
-            char0 as char,
-            char1 as char
-        );
 
         // Verify that the remote side made the first character uppercase.
         if char0 != c.to_ascii_uppercase() {

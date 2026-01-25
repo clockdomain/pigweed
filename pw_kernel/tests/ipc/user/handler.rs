@@ -24,27 +24,12 @@ fn handle_uppercase_ipcs() -> Result<()> {
     pw_log::info!("IPC service starting");
     loop {
         // Wait for an IPC to come in.
-        pw_log::info!("Handler: waiting for READABLE");
-        let wait_result = syscall::object_wait(handle::IPC, Signals::READABLE, Instant::MAX);
-        if wait_result.is_ok() {
-            pw_log::info!("Handler: object_wait OK");
-        } else {
-            pw_log::error!("Handler: object_wait FAILED");
-        }
-        wait_result?;
+        syscall::object_wait(handle::IPC, Signals::READABLE, Instant::MAX)?;
 
         // Read the payload.
         let mut buffer = [0u8; size_of::<char>()];
-        pw_log::info!("Handler: calling channel_read");
-        let read_result = syscall::channel_read(handle::IPC, 0, &mut buffer);
-        if let Ok(n) = read_result {
-            pw_log::info!("Handler: channel_read returned {} bytes", n as u32);
-        } else {
-            pw_log::error!("Handler: channel_read FAILED");
-        }
-        let len = read_result?;
+        let len = syscall::channel_read(handle::IPC, 0, &mut buffer)?;
         if len != size_of::<char>() {
-            pw_log::error!("Handler: wrong len");
             return Err(Error::OutOfRange);
         };
 
@@ -53,19 +38,12 @@ fn handle_uppercase_ipcs() -> Result<()> {
             return Err(Error::InvalidArgument);
         };
         let upper_c = c.to_ascii_uppercase();
-        pw_log::info!("Handler: processing char {} -> {}", c as u32, upper_c as u32);
 
         // Respond to the IPC with the uppercase character.
         let mut response_buffer = [0u8; size_of::<char>() * 2];
-        upper_c.encode_utf8(&mut response_buffer[0..size_of::<char>()]);        c.encode_utf8(&mut response_buffer[size_of::<char>()..]);
-        pw_log::info!("Handler: calling channel_respond");
-        let respond_result = syscall::channel_respond(handle::IPC, &response_buffer);
-        if respond_result.is_ok() {
-            pw_log::info!("Handler: channel_respond OK");
-        } else {
-            pw_log::error!("Handler: channel_respond FAILED");
-        }
-        respond_result?;
+        upper_c.encode_utf8(&mut response_buffer[0..size_of::<char>()]);
+        c.encode_utf8(&mut response_buffer[size_of::<char>()..]);
+        syscall::channel_respond(handle::IPC, &response_buffer)?;
     }
 }
 

@@ -252,6 +252,11 @@ impl KernelExceptionFrame {
     }
 }
 
+/// Exception frame pushed by the PendSV handler.
+///
+/// The PendSV handler pushes registers using `stmdb` which results in a different
+/// layout than the `KernelExceptionFrame` which is based on `SVCall` usage.
+///
 #[exception(exception = "HardFault")]
 #[unsafe(no_mangle)]
 extern "C" fn pw_kernel_hard_fault(frame: *mut KernelExceptionFrame) -> *mut KernelExceptionFrame {
