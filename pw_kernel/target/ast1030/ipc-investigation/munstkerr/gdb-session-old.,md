@@ -1,0 +1,171 @@
+# GDB Session 1: MUNSTKERR Frame Corruption Analysis
+
+## Session Summary (2026-01-24)
+
+**Fault**: MUNSTKERR at syscall #34
+**Root Cause Hypothesis**: Frame pointer passed to `svc_return` is 0x20 bytes off
+
+## Captured State at Fault
+
+| Register | Value | Notes |
+|----------|-------|-------|
+| MSP | 0x00060c40 | Where svc_return gets frame (WRONG) |
+| PSP | 0x00087e68 | Below user stack base! |
+| MMFSR | 0x08 | MUNSTKERR - unstacking error |
+| LR | 0xfffffffd | Correct EXC_RETURN |
+
+## Memory at Fault Point
+
+### Valid Frame at 0x60c20 (32 bytes BELOW MSP)
+```
+0x60c20:  0x00087ed0  ← r4 (valid user stack addr)
+0x60c24:  0x00000003  ← r5
+0x60c28:  0x00087fd8  ← r6 (valid user stack addr)
+0x60c2c:  0x00000005  ← r7
+0x60c30:  0x00087ee8  ← r8 (valid user stack addr)
+0x60c34:  0x00087e68  ← psp (matches PSP register - but INVALID!)
+0x60c38:  0x00000003  ← control (VALID: nPRIV=1, SPSEL=1)
+0x60c3c:  0xfffffffd  ← return (VALID EXC_RETURN)
+```
+
+### Corrupted Frame at MSP (0x60c40) - What svc_return sees
+```
+0x60c40:  0x00060c64  ← r4?? (kernel pointer - WRONG)
+0x60c44:  0x00087f98  ← r5
+0x60c48:  0x00000000  ← r6
+0x60c4c:  0x21000000  ← r7 (junk)
+...
+```
+
+## Key Evidence
+
+The `psp` field at 0x60c54 contains `0x000004a5` which is **svc_return+1** (a code address, not a stack address). This proves the frame was overwritten by a previous return sequence.
+
+---
+
+## Next Steps: Compare Syscall #33 vs #34
+
+### Step 1: Break at SVCall Entry, Track MSP Drift
+
+```gdb
+# Clear old breakpoints
+delete
+
+# Set fresh SVCall breakpoint with counter
+break SVCall
+commands
+  silent
+  set $svc_count = $svc_count + 1
+  if $svc_count >= 30
+    printf "[SVCall #%d] MSP=0x%08x PSP=0x%08x\n", $svc_count, $msp, $psp
+  end
+  continue
+end
+
+# Initialize counter
+set $svc_count = 0
+
+# Run
+continue
+```
+
+### Step 2: Stop at Syscall #33 and Dump Frame
+
+```gdb
+# Stop at syscall 33
+delete
+set $svc_count = 0
+break SVCall
+commands
+  silent
+  set $svc_count = $svc_count + 1
+  if $svc_count == 33
+    printf "\n=== SYSCALL #33 (working) ===\n"
+    printf "MSP: 0x%08x\n", $msp
+    printf "PSP: 0x%08x\n", $psp
+    printf "Kernel stack (MSP-0x40 to MSP+0x40):\n"
+    x/32wx ($msp - 0x40)
+  end
+  if $svc_count == 33
+    # Don't continue - stop here for inspection
+  else
+    continue
+  end
+end
+
+continue
+```
+
+### Step 3: After Inspecting #33, Continue to #34
+
+```gdb
+# After inspecting syscall #33, re-enable continue
+continue
+
+# It should stop at MemoryManagement fault
+# Compare the frame layout
+```
+
+### Step 4: Validate Frame at Each Point
+
+At syscall #33, manually verify:
+```gdb
+# Where is the KernelExceptionFrame?
+print/x $r0
+
+# Dump the frame contents
+x/12wx $r0
+
+# Expected layout:
+#   +0x00: r4-r11 (8 words)
+#   +0x20: psp
+#   +0x24: control
+#   +0x28: return_address
+```
+
+### Step 5: Watch for Frame Corruption
+
+If we know the frame address at syscall #33:
+```gdb
+# Set watchpoint on psp field (offset 0x20 from frame start)
+# Replace FRAME_ADDR with actual value from Step 4
+watch *(uint32_t*)(FRAME_ADDR + 0x20)
+continue
+```
+
+---
+
+## Questions to Answer
+
+1. **Does MSP drift between syscalls?**
+   - If yes → stack not being properly restored
+   - If no → frame pointer calculation bug
+
+2. **Is the frame at syscall #33 valid?**
+   - Check psp, control, return_address fields
+
+3. **What changes between #33 and #34?**
+   - Same thread? Different thread?
+   - Stack overflow into previous frame?
+
+4. **Is there a nested exception/PendSV between #33 and #34?**
+   - Could explain frame corruption
+
+---
+
+## Hypothesis Refinement
+
+After syscall #33 analysis, update one of:
+
+- [ ] **Stack exhaustion**: MSP running into saved frames
+- [ ] **Frame pointer calculation**: SVCall computes wrong r0
+- [ ] **Nested exception**: PendSV corrupts frame mid-syscall
+- [ ] **Re-use of frame memory**: Previous frame not cleared
+
+---
+
+## Session Commands Log
+
+```
+(paste actual GDB commands and output here)
+```

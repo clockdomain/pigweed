@@ -1,0 +1,81 @@
+=== AST1030 IPC Debug Session Started ===
+Breakpoint 1 at 0x45c
+Breakpoint 2 at 0x11c8
+Breakpoint 3 at 0x4a4
+Breakpoint 4 at 0x5fc
+Breakpoint 5 at 0x59c
+
+=== Debug commands loaded ===
+Commands available:
+  === SYSCALL/STACK TRACKING ===
+  enable_syscall_counting - Track syscalls + MSP drift + frame dump
+  enable_frame_validation - Deep frame validation at each svc_return
+  === HANG INVESTIGATION ===
+  diagnose_hang   - Run after Ctrl+C when system hangs
+  check_primask   - Check if interrupts disabled (PRIMASK)
+  check_pendsv_state - Check if PendSV pending but blocked
+  === GENERAL ===
+  dump_context    - Show all registers and exception state
+  dump_frame [addr] - Dump KernelExceptionFrame (default: $r0)
+  validate_frame [addr] - Check frame for corruption
+  check_priorities - Verify exception priority config
+  check_exceptions - Show active/pending exceptions
+  check_mmfault   - Show MemManage fault details
+  watch_r8 <addr> - Set watchpoint on frame's r8 field
+  watch_frame <addr> - Set watchpoint on frame's registers
+  tc              - Continue with timestamp
+  start_debug     - Show quick-start info
+
+Breakpoints pre-configured:
+  SVCall, handle_svc, svc_return, PendSV (disabled), MemoryManagement
+
+Run 'start_debug' to begin.
+Remote debugging using :1234
+0x00000420 in Reset ()
+Breakpoint 6 at 0x5a0
+Continuing.
+
+Breakpoint 6, 0x000005a0 in MemoryManagement ()
+=== MemManage Fault Status ===
+  MMFSR: 0x82
+    MMARVALID: MMFAR holds valid address
+    DACCVIOL: Data access violation
+  MMFAR: 0x00060850
+=== Full Context ===
+PC:  0x000005a0  LR:  0xfffffffd
+MSP: 0x000617b8  PSP: 0x0008fea8
+CONTROL: 0x00000001
+ICSR: 0x00000804 (active=4, pending=0, pendSV=0)
+r0:  0x00000000  r1:  0x00000001  r2:  0x0008fed8  r3:  0x0008fedc
+r4:  0x0008ff48  r5:  0x00000000  r6:  0x00000004  r7:  0x0008ffb0
+r8:  0x00060850  r9:  0x00060870  r10: 0x00000004  r11: 0x0008fed8
+r12: 0x0008fed8
+0x61778 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1536>:	0x0008ffbc	0x0006084c	0x00061850	0x00000615
+0x61788 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1552>:	0x00000000	0x0006185c	0x0008ffbc	0x0006084c
+0x61798 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1568>:	0x00061850	0x00060850	0x00000000	0x00006ba4
+0x617a8 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1584>:	0x00000002	0x0008ff80	0x00000003	0xfffffffd
+0x617b8 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1600>:	0x00060850	0x00000000	0x000617e8	0x00002809
+0x617c8 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1616>:	0x00000003	0x00001331	0x00002808	0x21000000
+0x617d8 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1632>:	0x00000000	0x00000000	0x00061850	0x00002151
+0x617e8 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1648>:	0x00000003	0x0008ffbc	0x00000004	0x00006b30
+   0x58c <HardFault+32>:	ldrh	r1, [r1, #0]
+   0x58e <HardFault+34>:	msr	CONTROL, r1
+   0x592 <HardFault+38>:	dsb	sy
+   0x596 <HardFault+42>:	isb	sy
+   0x59a <HardFault+46>:	pop	{pc}
+   0x59c <MemoryManagement>:	mrs	r1, CONTROL
+=> 0x5a0 <MemoryManagement+4>:	mrs	r0, PSP
+   0x5a4 <MemoryManagement+8>:	push	{r0, r1, lr}
+   0x5a6 <MemoryManagement+10>:	stmdb	sp!, {r4, r5, r6, r7, r8, r9, r10, r11}
+   0x5aa <MemoryManagement+14>:	mov	r0, sp
+codegen::start::declare_static::STORAGE + 4 in section .zero_init_ram
+Undefined command: "".  Try "help".
+0x8fea8:	0x00000000	0x00060850	0x0008fed8	0x0008fedc
+0x8feb8:	0x0008fed8	0x00000003	0x000408d4	0x61000000
+   0x408d4:	ldr.w	r0, [r1], #16
+   0x408d8:	str	r1, [sp, #8]
+   0x408da:	cmp	r0, #1
+   0x408dc:	bne.n	0x40960
+   0x408de:	ldrd	r0, r2, [r8, #8]
+No symbol matches 0x408d4.
+No symbol matches 0x408d0.

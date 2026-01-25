@@ -1,0 +1,117 @@
+=== AST1030 IPC Debug Session Started ===
+Breakpoint 1 at 0x45c
+Breakpoint 2 at 0x11c8
+Breakpoint 3 at 0x4a4
+Breakpoint 4 at 0x5fc
+Breakpoint 5 at 0x59c
+
+=== Debug commands loaded ===
+Commands available:
+  === SYSCALL/STACK TRACKING ===
+  enable_syscall_counting - Track syscalls + MSP drift + frame dump
+  enable_frame_validation - Deep frame validation at each svc_return
+  === HANG INVESTIGATION ===
+  diagnose_hang   - Run after Ctrl+C when system hangs
+  check_primask   - Check if interrupts disabled (PRIMASK)
+  check_pendsv_state - Check if PendSV pending but blocked
+  === GENERAL ===
+  dump_context    - Show all registers and exception state
+  dump_frame [addr] - Dump KernelExceptionFrame (default: $r0)
+  validate_frame [addr] - Check frame for corruption
+  check_priorities - Verify exception priority config
+  check_exceptions - Show active/pending exceptions
+  check_mmfault   - Show MemManage fault details
+  watch_r8 <addr> - Set watchpoint on frame's r8 field
+  watch_frame <addr> - Set watchpoint on frame's registers
+  tc              - Continue with timestamp
+  start_debug     - Show quick-start info
+
+Breakpoints pre-configured:
+  SVCall, handle_svc, svc_return, PendSV (disabled), MemoryManagement
+
+Run 'start_debug' to begin.
+Remote debugging using :1234
+0x00000420 in Reset ()
+Reading symbols from bazel-bin/pw_kernel/target/ast1030/ipc/user/ipc.elf...
+warning: Loadable section ".static_init_ram.initiator_0" outside of ELF segments
+  in /home/rusty1968/.cache/bazel/_bazel_rusty1968/0c83042f83729f4b20d5f0c6267e1934/execroot/_main/bazel-out/ast1030-fastbuild/bin/pw_kernel/target/ast1030/ipc/user/ipc.elf
+warning: Loadable section ".static_init_ram.handler_1" outside of ELF segments
+  in /home/rusty1968/.cache/bazel/_bazel_rusty1968/0c83042f83729f4b20d5f0c6267e1934/execroot/_main/bazel-out/ast1030-fastbuild/bin/pw_kernel/target/ast1030/ipc/user/ipc.elf
+Hardware watchpoint 6: *(unsigned int*)0x60850
+Breakpoint 7 at 0x59c
+Continuing.
+
+Breakpoint 7, 0x0000059c in MemoryManagement ()
+=== MemManage Fault Status ===
+  MMFSR: 0x82
+    MMARVALID: MMFAR holds valid address
+    DACCVIOL: Data access violation
+  MMFAR: 0xffffffff
+0x8fea8:	0x00000000	0xffffffff	0x0008fed8	0x0008fedc
+0x8feb8:	0x0008fed8	0x00000003	0x000408d4	0x61000000
+r0             0x0                 0
+r1             0xffffffff          -1
+r8             0xffffffff          -1
+r9             0xf                 15
+msp            0x61858             399448
+psp            0x8fea8             589480
+0x61818 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1696>:	0x00000001	0x000011c9	0x000618f0	0x00000615
+0x61828 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1712>:	0x00000000	0x000618fc	0x00000001	0x000011c9
+0x61838 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1728>:	0x000618f0	0xffffffff	0x00040ffc	0xffffffff
+0x61848 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1744>:	0x00000000	0x0008ff80	0x00000003	0xfffffffd
+0x61858 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1760>:	0x00000000	0x00000001	0x00000000	0x00000000
+0x61868 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1776>:	0x00000000	0x00000ec5	0x000011f2	0x41000000
+0x61878 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1792>:	0x00000000	0x00000000	0x000618f0	0x00002151
+0x61888 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1808>:	0x00000001	0x0008ff44	0x0000001e	0x00006b30
+0x61838 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1728>:	0x000618f0	0xffffffff	0x00040ffc	0xffffffff
+0x61848 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1744>:	0x00000000	0x0008ff80	0x00000003	0xfffffffd
+0x61858 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1760>:	0x00000000	0x00000001	0x00000000	0x00000000
+0x61868 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1776>:	0x00000000	0x00000ec5	0x000011f2	0x41000000
+0x61858 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1760>:	0x00000000	0x00000001	0x00000000	0x00000000
+0x61868 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1776>:	0x00000000	0x00000ec5	0x000011f2	0x41000000
+0x61878 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1792>:	0x00000000	0x00000000	0x000618f0	0x00002151
+0x61888 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1808>:	0x00000001	0x0008ff44	0x0000001e	0x00006b30
+0x8fe88:	0x00000036	0x00000018	0x0008ff44	0x0000001e
+0x8fe98:	0x0008ff60	0x0008ff61	0x0008ff5d	0xffffffff
+   0x408d4:	ldr.w	r0, [r1], #16
+   0x408d8:	str	r1, [sp, #8]
+   0x408da:	cmp	r0, #1
+   0x408dc:	bne.n	0x40960
+0x61818 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1696>:	0x00000001	0x000011c9	0x000618f0	0x00000615
+0x61828 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1712>:	0x00000000	0x000618fc	0x00000001	0x000011c9
+0x61838 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1728>:	0x000618f0	0xffffffff	0x00040ffc	0xffffffff
+0x61848 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1744>:	0x00000000	0x0008ff80	0x00000003	0xfffffffd
+0x61858 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1760>:	0x00000000	0x00000001	0x00000000	0x00000000
+0x61868 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1776>:	0x00000000	0x00000ec5	0x000011f2	0x41000000
+0x61878 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1792>:	0x00000000	0x00000000	0x000618f0	0x00002151
+0x61888 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1808>:	0x00000001	0x0008ff44	0x0000001e	0x00006b30
+0x61898 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1824>:	0x00000010	0x00000001	0x00000001	0x000618f0
+0x618a8 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1840>:	0x00000007	0x00000000	0x00000001	0x00000000
+0x618b8 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1856>:	0x00000000	0x00000000	0x00000001	0x00000000
+0x618c8 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1872>:	0x0006084c	0x00006ba4	0x00061920	0x0008ffc0
+0x61830 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1720>:	0x00000001	0x000011c9	0x000618f0	0xffffffff
+0x61840 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1736>:	0x00040ffc	0xffffffff	0x00000000	0x0008ff80
+0x61850 <_RNvNvNvCsfuGMkhVuvON_7codegen5starts_22___init_non_priv_thread8___STATIC+1752>:	0x00000003	0xfffffffd	0x00000000	0x00000001
+0x8ff60:	0x00000a74	0x00000000	0x00000000	0x00000000
+0x8ff70:	0x00000000	0x00000000	0x00000000	0x00000000
+0x8ff80:	0x00000000	0x00000001	0xffffffff	0xffffffff
+0x8ff90:	0x0008ff5d	0xffffffff	0x00040ffc	0xffffffff
+Dump of assembler code for function svc_return:
+   0x000004a4 <+0>:	mov	sp, r0
+   0x000004a6 <+2>:	ldmia.w	sp!, {r4, r5, r6, r7, r8, r9, r10, r11}
+   0x000004aa <+6>:	ldmia.w	sp!, {r0, r1, lr}
+   0x000004ae <+10>:	msr	PSP, r0
+   0x000004b2 <+14>:	orr.w	r1, r1, #3
+   0x000004b6 <+18>:	msr	CONTROL, r1
+   0x000004ba <+22>:	dsb	sy
+   0x000004be <+26>:	isb	sy
+   0x000004c2 <+30>:	ldmia.w	sp!, {r0, r1, r2, r3, r12, lr}
+   0x000004c6 <+34>:	pop	{r1}
+   0x000004c8 <+36>:	pop	{r0}
+   0x000004ca <+38>:	ands.w	r0, r0, #512	; 0x200
+   0x000004ce <+42>:	it	ne
+   0x000004d0 <+44>:	addne	sp, #4
+   0x000004d2 <+46>:	mov.w	r0, #0
+   0x000004d6 <+50>:	orr.w	r1, r1, #1
+   0x000004da <+54>:	bx	r1
+End of assembler dump.

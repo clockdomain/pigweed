@@ -1,0 +1,79 @@
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: target //pw_kernel/target/ast1030/ipc/user:ipc_test (0 packages loaded, 0 targets configured)
+Analyzing: target //pw_kernel/target/ast1030/ipc/user:ipc_test (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed target //pw_kernel/target/ast1030/ipc/user:ipc_test (0 packages loaded, 0 targets configured).
+[1 / 8] Compiling Rust rlib kernel (20 files); 1s linux-sandbox
+[2 / 8] [Prepa] Compiling Rust rlib arch_arm_cortex_m (20 files)
+[2 / 8] Compiling Rust rlib arch_arm_cortex_m (20 files); 1s linux-sandbox
+[3 / 8] checking cached actions
+[5 / 8] [Prepa] Compiling Rust bin target (1 files)
+[6 / 8] [Prepa] SystemImageAssembler pw_kernel/target/ast1030/ipc/user/ipc.elf
+[8 / 9] Testing //pw_kernel/target/ast1030/ipc/user:ipc_test; 0s linux-sandbox
+[8 / 9] Testing //pw_kernel/target/ast1030/ipc/user:ipc_test; 10s linux-sandbox
+[8 / 9] Testing //pw_kernel/target/ast1030/ipc/user:ipc_test; 40s linux-sandbox
+[8 / 9] Testing //pw_kernel/target/ast1030/ipc/user:ipc_test; 62s linux-sandbox
+
+TIMEOUT: //pw_kernel/target/ast1030/ipc/user:ipc_test (Summary)
+      /home/rusty1968/.cache/bazel/_bazel_rusty1968/0c83042f83729f4b20d5f0c6267e1934/execroot/_main/bazel-out/ast1030-fastbuild/testlogs/pw_kernel/target/ast1030/ipc/user/ipc_test/test.log
+INFO: From Testing //pw_kernel/target/ast1030/ipc/user:ipc_test:
+==================== Test output for //pw_kernel/target/ast1030/ipc/user:ipc_test:
+[INF] Welcome to Maize on AST1030 User IPC!
+[INF] Cortex-M early initialization
+[INF] CPUID: revision=0x0, part_number=0xc24, architecture=0xf, variant=0x0, implementor=0x41
+[INF] MPU regions: 8
+[INF] Starting monotonic SysTick timer
+[INF] Created initial thread; bootstrapping
+[INF] Welcome to the first thread, continuing bootstrap
+[INF] Cortex-M initialization
+[INF] Ticks per 10ms: 0
+[INF] Starting thread 'idle' (0x00060074)
+[INF] Allocating non-privileged process 'initiator process'
+[INF] Allocating non-privileged thread 'initiator thread' (entry: 0x00020001)
+[INF] Initializing non-privileged thread 'initiator thread'
+[INF] Starting thread 'initiator thread' (0x000610a8)
+[INF] Allocating non-privileged process 'handler process'
+[INF] Allocating non-privileged thread 'handler thread' (entry: 0x00040001)
+[INF] Initializing non-privileged thread 'handler thread'
+[INF] Starting thread 'handler thread' (0x00061990)
+[DBG] syscall: 0xf002
+[DBG] syscall: 0xf002
+[INF] IPC service starting
+[DBG] syscall: 0xf002 returning
+[DBG] syscall: 0xf002
+[INF] Ipc test starting
+[DBG] syscall: 0xf002 returning
+[DBG] syscall: 0xf002
+[INF] Handler: waiting for READABLE
+[DBG] syscall: 0xf002 returning
+[DBG] syscall: 0x0000
+[DBG] syscall: handling object_wait 0 1 ffffffffffffffff
+[DBG] syscall: 0xf002
+[INF] Initiator: sending char 97
+[DBG] syscall: 0xf002 returning
+[DBG] syscall: 0x0001
+[DBG] syscall: handling channel_transact
+[DBG] syscall: handling channel_transact(0x0, 0x87fac, 0x4, 0x87fb0, 0x8, 0xffffffffffffffff)
+[INF] MemoryManagement exception triggered: address=0x00061898
+[INF] Kernel exception frame 0x0617ec:
+[INF] r4  0x0008ff48 r5 0x00000000 r6  0x00000004 r7  0x0008ffb0
+[INF] r8  0x00061898 r9 0x000618a8 r10 0x00000004 r11 0x0008fed8
+[INF] psp 0x0008fea8 control 0x00000001 return_address 0xfffffffd
+[INF] Exception frame 0x08fea8:
+[INF] r0  0x00000000 r1 0x00061898 r2  0x0008fed8 r3  0x0008fedc
+[INF] r12 0x0008fed8 lr 0x00000003 pc  0x000408d4 psr 0x61000000
+-- Test timed out at 2026-01-24 08:28:04 UTC --
+qemu-system-arm.exe: terminating on signal 15 from pid 2 (bash)
+================================================================================
+INFO: Found 1 test target...
+Target //pw_kernel/target/ast1030/ipc/user:ipc_test up-to-date:
+  bazel-bin/pw_kernel/target/ast1030/ipc/user/ipc_test
+INFO: Elapsed time: 77.872s, Critical Path: 76.85s
+INFO: 9 processes: 1 internal, 8 linux-sandbox.
+INFO: Build completed, 1 test FAILED, 9 total actions
+//pw_kernel/target/ast1030/ipc/user:ipc_test                            TIMEOUT in 60.1s
+  /home/rusty1968/.cache/bazel/_bazel_rusty1968/0c83042f83729f4b20d5f0c6267e1934/execroot/_main/bazel-out/ast1030-fastbuild/testlogs/pw_kernel/target/ast1030/ipc/user/ipc_test/test.log
+
+Executed 1 out of 1 test: 1 fails locally.

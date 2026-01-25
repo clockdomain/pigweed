@@ -1,0 +1,73 @@
+[0;32m
+  WELCOME TO...
+[0m
+[0;35m ▒█████▄   █▓  ▄███▒  ▒█    ▒█ ░▓████▒ ░▓████▒ ▒▓████▄
+  ▒█░  █░ ░█▒ ██▒ ▀█▒ ▒█░ █ ▒█  ▒█   ▀  ▒█   ▀  ▒█  ▀█▌
+  ▒█▄▄▄█░ ░█▒ █▓░ ▄▄░ ▒█░ █ ▒█  ▒███    ▒███    ░█   █▌
+  ▒█▀     ░█░ ▓█   █▓ ░█░ █ ▒█  ▒█   ▄  ▒█   ▄  ░█  ▄█▌
+  ▒█      ░█░ ░▓███▀   ▒█▓▀▓█░ ░▓████▒ ░▓████▒ ▒▓████▀
+[0m
+[0;32m  BOOTSTRAP! Bootstrap may take a few minutes; please be patient.
+[0m
+[1mDownloading and installing packages into local source directory:
+[0m
+  Setting up CIPD package manager...
+
+Bootstrap: SSL error in Python when downloading CIPD client.
+If using system Python try
+
+    sudo pip install certifi
+
+And if on the system Python on a Mac try
+
+    /Applications/Python <version>/Install Certificates.command
+
+If using Homebrew Python try
+
+    brew install openssl
+    brew uninstall python
+    brew install python
+
+If those don't work, address all the potential issues shown
+by the following command.
+
+    brew doctor
+
+Otherwise, check that your machine's Python can use SSL,
+testing with the httplib module on Python 2 or http.client on
+Python 3.
+
+Traceback (most recent call last):
+  File "/home/rusty1968/workstreams/rtos/pigweed-rusty/pw_env_setup/py/pw_env_setup/env_setup.py", line 1021, in <module>
+    sys.exit(main())
+  File "/home/rusty1968/workstreams/rtos/pigweed-rusty/pw_env_setup/py/pw_env_setup/env_setup.py", line 1013, in main
+    return EnvSetup(**vars(parse())).setup()
+  File "/home/rusty1968/workstreams/rtos/pigweed-rusty/pw_env_setup/py/pw_env_setup/env_setup.py", line 592, in setup
+    result = step(spin)
+  File "/home/rusty1968/workstreams/rtos/pigweed-rusty/pw_env_setup/py/pw_env_setup/env_setup.py", line 696, in cipd
+    cipd_client = cipd_wrapper.init(
+  File "/home/rusty1968/workstreams/rtos/pigweed-rusty/pw_env_setup/py/pw_env_setup/cipd_setup/wrapper.py", line 371, in init
+    bootstrap(client, silent, rosetta=rosetta)
+  File "/home/rusty1968/workstreams/rtos/pigweed-rusty/pw_env_setup/py/pw_env_setup/cipd_setup/wrapper.py", line 321, in bootstrap
+    tmp.write(client_bytes(rosetta))
+  File "/home/rusty1968/workstreams/rtos/pigweed-rusty/pw_env_setup/py/pw_env_setup/cipd_setup/wrapper.py", line 271, in client_bytes
+    conn.request('GET', path)
+  File "/usr/lib/python3.10/http/client.py", line 1303, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+  File "/usr/lib/python3.10/http/client.py", line 1349, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+  File "/usr/lib/python3.10/http/client.py", line 1298, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+  File "/usr/lib/python3.10/http/client.py", line 1058, in _send_output
+    self.send(msg)
+  File "/usr/lib/python3.10/http/client.py", line 996, in send
+    self.connect()
+  File "/usr/lib/python3.10/http/client.py", line 1475, in connect
+    self.sock = self._context.wrap_socket(self.sock,
+  File "/usr/lib/python3.10/ssl.py", line 513, in wrap_socket
+    return self.sslsocket_class._create(
+  File "/usr/lib/python3.10/ssl.py", line 1100, in _create
+    self.do_handshake()
+  File "/usr/lib/python3.10/ssl.py", line 1371, in do_handshake
+    self._sslobj.do_handshake()
+ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1007)

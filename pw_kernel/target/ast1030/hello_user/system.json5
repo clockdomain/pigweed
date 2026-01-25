@@ -44,7 +44,12 @@
             ram_size_bytes: 65536,        // 64KB
             process: {
                 name: "hello process",
-                objects: [],
+                objects: [
+                    {
+                        name: "TEST_CHANNEL",
+                        type: "channel_handler",
+                    },
+                ],
                 threads: [
                     {
                         name: "hello thread",

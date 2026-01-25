@@ -1,0 +1,9 @@
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+Analyzing: target //pw_kernel/target/lm3s6965/ipc/user:ipc_test (0 packages loaded, 0 targets configured)
+Analyzing: target //pw_kernel/target/lm3s6965/ipc/user:ipc_test (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed target //pw_kernel/target/lm3s6965/ipc/user:ipc_test (0 packages loaded, 532 targets configured).
+[1 / 1] no actions running
+[540 / 1,027] Creating runfiles tree bazel-out/lm3s6965-fastbuild/bin/pw_kernel/target/lm3s6965/ipc/user/ipc_test.runfiles; 0s local ... (5 actions, 4 running)

@@ -20,6 +20,9 @@
 #![no_main]
 #![no_std]
 
+use app_hello::handle;
+use userspace::syscall::Signals;
+use userspace::time::Instant;
 use userspace::{entry, syscall};
 
 #[entry]
@@ -42,6 +45,15 @@ fn entry() -> ! {
         }
     }
     pw_log::info!("All 100 syscalls completed successfully!");
+
+    // Test object_wait with immediate timeout (tests blocking syscall return path)
+    pw_log::info!("Testing object_wait with immediate timeout...");
+    let result = syscall::object_wait(handle::TEST_CHANNEL, Signals::READABLE, Instant::from_ticks(0));
+    pw_log::info!("object_wait returned: ok={}", result.is_ok() as u32);
+    if let Err(e) = result {
+        // Expect DeadlineExceeded (4) since no one is sending to this channel
+        pw_log::info!("object_wait error code: {} (expected 4=DeadlineExceeded)", e as u32);
+    }
 
     // Signal test passed and exit
     pw_log::info!("✅ PASSED: User mode works correctly!");

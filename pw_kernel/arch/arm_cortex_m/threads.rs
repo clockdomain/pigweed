@@ -28,6 +28,7 @@ compile_error!("FEATURE CHECK: user_space feature is NOT enabled!");
 use core::arch::asm;
 use core::mem::{self, MaybeUninit};
 use core::ptr::NonNull;
+use core::sync::atomic::{fence, Ordering};
 
 use cortex_m::peripheral::{SCB, *};
 use kernel::interrupt_controller::InterruptController;
@@ -498,12 +499,20 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
         // NOTE: This is ONLY needed on ARMv7-M. On ARMv8-M (Cortex-M33+),
         // the CONTROL register has additional bits (SFPA, BTI, PAC) that
         // must be preserved, so we cannot simply overwrite with canonical.
-        #[cfg(all(feature = "user_space", feature = "armv7m"))]
+        //
+        // DISABLED FOR TESTING: Verify if this fixup is causing corruption
+        #[cfg(all(feature = "user_space", feature = "armv7m", feature = "DISABLED_FOR_TESTING"))]
         {
             let saved_frame = &mut *(*active_thread).frame;
             saved_frame.control = (*active_thread).canonical_control;
             saved_frame.return_address = (*active_thread).canonical_return_address;
         }
+
+        // Memory barrier: Ensure frame write and ARMv7-M fixups are visible
+        // before we clear active_thread and proceed. On ARMv7-M, plain stores
+        // don't have implicit ordering - the interrupt-disable provides mutual
+        // exclusion but not memory ordering. This generates `dmb ish`.
+        fence(Ordering::Release);
 
         set_active_thread(core::ptr::null_mut());
     }
@@ -548,6 +557,11 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
             frame.return_address as u32
         );
     }
+
+    // Memory barrier: Ensure all scheduler writes and memory config updates
+    // are visible before we read and return the new thread's frame pointer.
+    // This generates `dmb ish` and ensures we see the most recent frame data.
+    fence(Ordering::Acquire);
 
     unsafe { (*new_thread).frame }
 }
