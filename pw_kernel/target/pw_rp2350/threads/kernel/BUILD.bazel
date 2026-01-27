@@ -23,6 +23,7 @@ system_image(
     platform = "//pw_kernel/target/pw_rp2350",
     system_config = ":system_config",
     tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 
 system_image_test(

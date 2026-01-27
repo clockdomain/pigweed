@@ -25,6 +25,7 @@ system_image(
     platform = "//pw_kernel/target/ast1030",
     system_config = ":system_config",
     tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
 )
 
