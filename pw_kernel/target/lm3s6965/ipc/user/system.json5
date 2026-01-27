@@ -38,11 +38,11 @@
     arch: {
         type: "armv7m",
         vector_table_start_address: 0x00000000,
-        vector_table_size_bytes: 1056,  // 0x420
+        vector_table_size_bytes: 1280,  // 0x500
     },
     kernel: {
-        flash_start_address: 0x00000420,  // After vector table
-        flash_size_bytes: 64480,          // ~62KB (ends at 0x00010000, 64KB boundary)
+        flash_start_address: 0x00000500,  // After vector table
+        flash_size_bytes: 64256,          // ~62KB (ends at 0x00010000, 64KB boundary)
         ram_start_address: 0x20000000,    // SRAM starts at 0x20000000 for LM3S6965
         ram_size_bytes: 32768,            // 32KB for kernel
     },
