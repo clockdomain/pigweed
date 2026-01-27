@@ -34,6 +34,15 @@ Notes:
 - `int` shows interrupt entry/exit and IRQ routing
 - `cpu` captures CPU state changes
 
+### Quick tmux launch (QEMU + detokenizer + GDB)
+
+```
+tmux new-session -s ast1030-debug \; \
+	send-keys 'qemu-system-arm -machine ast1030-evb -cpu cortex-m4 -bios none -nographic -serial mon:stdio -kernel bazel-bin/pw_kernel/target/ast1030/ipc/user/ipc.elf -semihosting-config enable=on,target=native -S -s 2>&1 | python3 -m pw_tokenizer.detokenize base64 bazel-bin/pw_kernel/target/ast1030/ipc/user/ipc.elf' C-m \; \
+	split-window -h \; \
+	send-keys 'sleep 2 && gdb-multiarch bazel-bin/pw_kernel/target/ast1030/ipc/user/ipc.elf -x pw_kernel/target/ast1030/ipc-investigation/debug.gdb -ex "target remote :1234"' C-m
+```
+
 ## 3) Narrow the scope with breakpoints
 
 Use GDB to stop at high‑value locations:
