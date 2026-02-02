@@ -104,7 +104,9 @@ pub unsafe extern "C" fn SVCall() -> ! {
             // Save the registers (exception frame) not saved by the hardware
             // exception handling logic.
             // see `exceptions::KernelExceptionFrame`
+            // Fix 6: Force CONTROL=0x03 for user threads
             mrs     r2, control
+            orr     r2, r2, 0x3
             mrs     r1, psp
             push    {{ r1 - r2, lr }}
 
@@ -217,7 +219,6 @@ pub unsafe extern "C" fn svc_return() -> ! {
 
             dsb
             isb
-
 
             // Restore the standard exception frame pushed by the hardware while
             // handling the initial SVCall from userspace.

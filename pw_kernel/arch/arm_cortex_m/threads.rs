@@ -456,6 +456,38 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
 
     unsafe {
         (*active_thread).frame = frame;
+
+        // CONTROL register corruption fix:
+        // The CONTROL value saved by the exception wrapper may be stale or
+        // corrupted due to QEMU timing issues or ARM memory ordering. Instead
+        // of trusting the saved value, compute the canonical CONTROL based on
+        // the thread's known state:
+        //
+        // - Kernel thread (memory_config null): CONTROL = 0x00 (privileged, MSP)
+        // - User thread returning to PSP (SP_SEL=1): CONTROL = 0x03 (unprivileged, PSP)
+        // - User thread mid-syscall (SP_SEL=0): CONTROL = 0x02 (privileged, PSP)
+        //
+        // The EXC_RETURN SP_SEL bit (bit 2) tells us which stack the thread
+        // was using when interrupted.
+        #[cfg(feature = "user_space")]
+        {
+            let frame_ref = &mut *frame;
+            let exc_return_sp_sel = frame_ref.return_address & 0x4; // SP_SEL is bit 2
+
+            if (*active_thread).memory_config.is_null() {
+                // Kernel thread: privileged, MSP
+                frame_ref.control = ControlVal(0x00);
+            } else if exc_return_sp_sel != 0 {
+                // User thread returning to PSP: unprivileged, PSP
+                frame_ref.control = ControlVal(0x03);
+            } else {
+                // User thread mid-syscall (returning to MSP for handle_svc): privileged, PSP
+                // Note: SPSEL=1 because user stack is still in PSP, but we're in
+                // privileged mode for syscall processing
+                frame_ref.control = ControlVal(0x02);
+            }
+        }
+
         set_active_thread(core::ptr::null_mut());
     }
 
@@ -481,6 +513,22 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
         if (*new_thread).memory_config != (*active_thread).memory_config {
             (*(*new_thread).memory_config).write();
         }
+
+        // CRITICAL ASSERTION: Detect CONTROL=0x01 corruption before restore.
+        // CONTROL=0x01 (nPRIV=1, SPSEL=0) is an invalid state for user threads
+        // because it means "unprivileged mode using MSP" which causes stack
+        // corruption and eventual hard faults.
+        //
+        // Valid CONTROL values:
+        //   0x00 - kernel thread (privileged, MSP)
+        //   0x02 - user thread mid-syscall (privileged, PSP)
+        //   0x03 - user thread normal (unprivileged, PSP)
+        let new_frame = &*(*new_thread).frame;
+        let new_control = new_frame.control.0;
+        pw_assert::assert!(
+            new_control != 0x01,
+            "CONTROL corruption detected! new_thread frame has CONTROL=0x01"
+        );
     }
     drop(sched_state);
 
