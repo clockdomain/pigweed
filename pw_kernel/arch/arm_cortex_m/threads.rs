@@ -12,23 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-// Compile-time feature detection assertions
-#[cfg(all(feature = "user_space", not(feature = "armv7m"), not(feature = "armv8m")))]
-compile_error!("FEATURE CHECK: user_space enabled but neither armv7m nor armv8m!");
-
-#[cfg(all(feature = "armv7m", feature = "armv8m"))]
-compile_error!("FEATURE CHECK: Both armv7m and armv8m features enabled - invalid!");
-
-#[cfg(all(feature = "armv7m", not(feature = "user_space")))]
-compile_error!("FEATURE CHECK: armv7m enabled but user_space NOT enabled!");
-
-#[cfg(not(feature = "user_space"))]
-compile_error!("FEATURE CHECK: user_space feature is NOT enabled!");
-
 use core::arch::asm;
 use core::mem::{self, MaybeUninit};
 use core::ptr::NonNull;
-use core::sync::atomic::{fence, Ordering};
 
 use cortex_m::peripheral::{SCB, *};
 use kernel::interrupt_controller::InterruptController;
@@ -46,10 +32,11 @@ use crate::exceptions::{
     ExcReturn, ExcReturnFrameType, ExcReturnMode, ExcReturnRegisterStacking, ExcReturnStack,
     ExceptionFrame, KernelExceptionFrame, RetPsrVal, exception,
 };
+use crate::protection_impl::MemoryConfig;
 use crate::regs::Regs;
 use crate::regs::msr::{ControlVal, Spsel};
 use crate::spinlock::BareSpinLock;
-use crate::{MemoryConfig, in_interrupt_handler, nvic};
+use crate::{in_interrupt_handler, nvic};
 
 const LOG_THREAD_CREATE: bool = false;
 const LOG_CONTEXT_SWITCH: bool = false;
@@ -142,17 +129,14 @@ impl Arch for crate::Arch {
 
         // Remember active_thread only if it wasn't already set and trigger
         // a pendsv only the first time
-        let did_set_pendsv = unsafe {
+        unsafe {
             if get_active_thread().is_null() {
                 set_active_thread(old_thread_state);
 
                 // Queue a PendSV
                 SCB::set_pendsv();
-                true
-            } else {
-                false
             }
-        };
+        }
 
         // Slightly different path based on if we're already inside an interrupt handler or not.
         if !in_interrupt_handler() {
@@ -174,10 +158,8 @@ impl Arch for crate::Arch {
             // old thread is context switched back to.
 
             sched_state = crate::Arch::get_scheduler(crate::Arch).lock(crate::Arch);
-        } else if did_set_pendsv {
-            // In interrupt context, verify PendSV is pending only if we set it.
-            // If a context switch was already queued (active_thread was not null),
-            // PendSV may have been consumed by a previous handler.
+        } else {
+            // in interrupt context the pendsv should have already triggered it
             pw_assert::assert!(SCB::is_pendsv_pending());
         }
         sched_state
@@ -245,16 +227,12 @@ impl Arch for crate::Arch {
             // Note: Higher values have lower priority
             let mut scb = p.SCB;
 
-            // Set PendSV (used by context switching) to the lowest priority.
-            // This ensures PendSV cannot preempt SVCall, which is critical
-            // because SVCall uses fake exception frames that would be corrupted
-            // if PendSV preempted mid-setup.
-            scb.set_priority(scb::SystemHandler::PendSV, 0b1111_1111);
+            // Set SVCall (system calls) to the lowest priority.
+            scb.set_priority(scb::SystemHandler::SVCall, 0b1111_1111);
 
-            // Set SVCall (system calls) to just above PendSV.
-            // This allows syscalls to complete without being preempted by
-            // context switches, while still being preemptable by IRQs.
-            scb.set_priority(scb::SystemHandler::SVCall, 0b1011_1111);
+            // Set PendSV (used by context switching) to just above SVCall so
+            // that system calls can context switch.
+            scb.set_priority(scb::SystemHandler::PendSV, 0b1011_1111);
 
             // Set IRQs to a priority above SVCall and PendSV so that they
             // can preempt them.
@@ -268,7 +246,7 @@ impl Arch for crate::Arch {
 
         // Set up PMP attr registers so that all PMP configs can reference them.
         #[cfg(feature = "user_space")]
-        crate::protection_init();
+        crate::protection_impl::init();
 
         crate::timer::systick_early_init();
 
@@ -301,7 +279,7 @@ impl Arch for crate::Arch {
 }
 
 impl kernel::scheduler::thread::ThreadState for ArchThreadState {
-    type MemoryConfig = crate::MemoryConfig;
+    type MemoryConfig = crate::protection_impl::MemoryConfig;
 
     const NEW: Self = Self {
         frame: core::ptr::null_mut(),
@@ -457,47 +435,11 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
     unsafe {
         (*active_thread).frame = frame;
 
-        // CONTROL register corruption fix:
-        // The CONTROL value saved by the exception wrapper may be stale or
-        // corrupted due to QEMU timing issues or ARM memory ordering. Instead
-        // of trusting the saved value, compute the canonical CONTROL based on
-        // the thread's known state:
-        //
-        // - Kernel thread (memory_config null): CONTROL = 0x00 (privileged, MSP)
-        // - User thread returning to PSP (SP_SEL=1): CONTROL = 0x03 (unprivileged, PSP)
-        // - User thread mid-syscall (SP_SEL=0): CONTROL = 0x02 (privileged, PSP)
-        //
-        // The EXC_RETURN SP_SEL bit (bit 2) tells us which stack the thread
-        // was using when interrupted.
-        #[cfg(feature = "user_space")]
-        {
-            let frame_ref = &mut *frame;
-            let exc_return_sp_sel = frame_ref.return_address & 0x4; // SP_SEL is bit 2
-
-            if (*active_thread).memory_config.is_null() {
-                // Kernel thread: privileged, MSP
-                frame_ref.control = ControlVal(0x00);
-            } else if exc_return_sp_sel != 0 {
-                // User thread returning to PSP: unprivileged, PSP
-                frame_ref.control = ControlVal(0x03);
-            } else {
-                // User thread mid-syscall (returning to MSP for handle_svc): privileged, PSP
-                // Note: SPSEL=1 because user stack is still in PSP, but we're in
-                // privileged mode for syscall processing
-                frame_ref.control = ControlVal(0x02);
-            }
-        }
-
         set_active_thread(core::ptr::null_mut());
     }
 
     // Return the arch frame for the current thread
-    //
-    // SAFETY: PendSV runs with interrupts disabled (cpsid i via
-    // disable_interrupts attribute), so preemption is already impossible.
-    // Using lock_no_preempt() avoids the preempt_disable_count manipulation
-    // that caused ordering issues between ARMv7-M and ARMv8-M.
-    let mut sched_state = unsafe { crate::Arch.get_scheduler().lock_no_preempt() };
+    let mut sched_state = crate::Arch.get_scheduler().lock(crate::Arch);
     let new_thread = unsafe { sched_state.get_current_arch_thread_state() };
     log_if::info_if!(
         LOG_CONTEXT_SWITCH,
@@ -513,44 +455,10 @@ extern "C" fn pendsv_swap_sp(frame: *mut KernelExceptionFrame) -> *mut KernelExc
         if (*new_thread).memory_config != (*active_thread).memory_config {
             (*(*new_thread).memory_config).write();
         }
-
-        // CRITICAL ASSERTION: Detect CONTROL=0x01 corruption before restore.
-        // CONTROL=0x01 (nPRIV=1, SPSEL=0) is an invalid state for user threads
-        // because it means "unprivileged mode using MSP" which causes stack
-        // corruption and eventual hard faults.
-        //
-        // Valid CONTROL values:
-        //   0x00 - kernel thread (privileged, MSP)
-        //   0x02 - user thread mid-syscall (privileged, PSP)
-        //   0x03 - user thread normal (unprivileged, PSP)
-        let new_frame = &*(*new_thread).frame;
-        let new_control = new_frame.control.0;
-        pw_assert::assert!(
-            new_control != 0x01,
-            "CONTROL corruption detected! new_thread frame has CONTROL=0x01"
-        );
     }
     drop(sched_state);
 
     unsafe { THREAD_LOCAL_STATE = NonNull::from_ref(&(*new_thread).local) }
-
-    // Debug: dump the kernel exception frame we're about to return to
-    #[cfg(feature = "user_space")]
-    {
-        let frame = unsafe { &*(*new_thread).frame };
-        log_if::info_if!(
-            LOG_CONTEXT_SWITCH,
-            "KernelFrame: psp={:#010x} control={:#010x} ret_addr={:#010x}",
-            frame.psp as u32,
-            frame.control.0 as u32,
-            frame.return_address as u32
-        );
-    }
-
-    // Memory barrier: Ensure all scheduler writes and memory config updates
-    // are visible before we read and return the new thread's frame pointer.
-    // This generates `dmb ish` and ensures we see the most recent frame data.
-    fence(Ordering::Acquire);
 
     unsafe { (*new_thread).frame }
 }

@@ -177,30 +177,9 @@ fn validate_handler_function(handler: &ItemFn) -> Result<()> {
     Ok(())
 }
 
-fn save_exception_frame(asm: &mut String, kernel_mode: &KernelMode, disable_interrupts: bool) {
+fn save_exception_frame(asm: &mut String, kernel_mode: &KernelMode) {
     asm.push_str("// save the additional registers\n");
     if kernel_mode.save_psp_needed() {
-        // Save CONTROL, PSP, and callee-saved registers to the stack.
-        // The CONTROL value saved here represents the thread's execution mode.
-        //
-        // CRITICAL: If we need to disable interrupts, we must do it BEFORE
-        // reading CONTROL. This ensures we don't read a partial/stale CONTROL
-        // value that could occur if we were triggered during a CONTROL transition
-        // in another code path (like svc_return). Without this, we could save
-        // CONTROL=0x01 (a corrupt partial write) instead of 0x03.
-        //
-        // We also add DSB+ISB before reading CONTROL to ensure any previous
-        // CONTROL writes from other code paths have fully completed. This is
-        // belt-and-suspenders protection against ARM pipeline/memory ordering.
-        if disable_interrupts {
-            asm.push_str(
-                "
-            cpsid   i               // Disable interrupts before reading CONTROL
-            dsb                     // Ensure any pending CONTROL writes complete
-            isb                     // Synchronize pipeline before reading CONTROL
-            ",
-            );
-        }
         asm.push_str(
             "
             mrs     r1, control
@@ -213,13 +192,6 @@ fn save_exception_frame(asm: &mut String, kernel_mode: &KernelMode, disable_inte
             ",
         );
     } else {
-        if disable_interrupts {
-            asm.push_str(
-                "
-            cpsid   i
-            ",
-            );
-        }
         asm.push_str(
             "
             push    {{ r4 - r11, lr }}
@@ -230,19 +202,8 @@ fn save_exception_frame(asm: &mut String, kernel_mode: &KernelMode, disable_inte
     }
 }
 
-fn restore_exception_frame(asm: &mut String, kernel_mode: &KernelMode, reenable_interrupts: bool) {
+fn restore_exception_frame(asm: &mut String, kernel_mode: &KernelMode) {
     if kernel_mode.save_psp_needed() {
-        // Restore callee-saved registers, PSP, and CONTROL from the stack.
-        //
-        // Best practice for CONTROL register updates (per ARM recommendations):
-        //   1. Write to CONTROL
-        //   2. DSB - ensures the write completes before proceeding
-        //   3. ISB - flushes pipeline so subsequent instructions see the change
-        //
-        // CRITICAL: If interrupts were disabled, we must re-enable them AFTER
-        // the CONTROL write and barriers complete. Re-enabling before would
-        // allow preemption during the CONTROL transition, causing corruption
-        // where PendSV could read a partial/stale CONTROL value.
         asm.push_str(
             "
             mov     sp, r0
@@ -251,30 +212,11 @@ fn restore_exception_frame(asm: &mut String, kernel_mode: &KernelMode, reenable_
             pop     {{ r0 - r1 }}
             msr     psp, r0
             msr     control, r1
-            dsb                     // Ensure CONTROL write completes
-            isb                     // Flush pipeline to see the change
-    ",
-        );
-        if reenable_interrupts {
-            asm.push_str(
-                "
-            cpsie   i               // Safe to re-enable after CONTROL is stable
-    ",
-            );
-        }
-        asm.push_str(
-            "
+
             pop     {{ pc }}
     ",
         );
     } else {
-        if reenable_interrupts {
-            asm.push_str(
-                "
-            cpsie   i
-    ",
-            );
-        }
         asm.push_str(
             "
             mov     sp, r0
@@ -282,6 +224,14 @@ fn restore_exception_frame(asm: &mut String, kernel_mode: &KernelMode, reenable_
     ",
         );
     }
+}
+
+fn disable_interrupts(asm: &mut String) {
+    asm.push_str("cpsid   i\n");
+}
+
+fn enable_interrupts(asm: &mut String) {
+    asm.push_str("cpsie   i\n");
 }
 
 fn exception(attr: TokenStream, item: TokenStream, kernel_mode: KernelMode) -> TokenStream {
@@ -297,18 +247,19 @@ fn exception(attr: TokenStream, item: TokenStream, kernel_mode: KernelMode) -> T
     let handler_name = handler_ident.clone().to_string();
 
     let mut asm = String::new();
-    // Note: If disable_interrupts is requested, it happens at the START of
-    // save_exception_frame (before reading CONTROL) to prevent reading a
-    // partial/stale CONTROL value.
-    save_exception_frame(&mut asm, &kernel_mode, attributes.disable_interrupts);
+    save_exception_frame(&mut asm, &kernel_mode);
+
+    if attributes.disable_interrupts {
+        disable_interrupts(&mut asm);
+    }
 
     asm.push_str(&format!("bl     {handler_name}\n"));
 
-    // Note: If interrupts were disabled, they are re-enabled INSIDE
-    // restore_exception_frame, AFTER the CONTROL write and barriers.
-    // This prevents race conditions where preemption during CONTROL
-    // transition could corrupt the register value.
-    restore_exception_frame(&mut asm, &kernel_mode, attributes.disable_interrupts);
+    if attributes.disable_interrupts {
+        enable_interrupts(&mut asm);
+    }
+
+    restore_exception_frame(&mut asm, &kernel_mode);
 
     quote! {
         #[unsafe(no_mangle)]
