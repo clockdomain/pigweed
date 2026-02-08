@@ -33,6 +33,8 @@ use memory_config::{MemoryRegion, MemoryRegionType};
 use crate::regs::Regs;
 use crate::regs::mpu::*;
 
+const LOG_MPU: bool = false;
+
 /// PMSAv7 MPU Region
 #[derive(Copy, Clone)]
 pub struct MpuRegion {
@@ -252,7 +254,8 @@ impl MpuRegion {
     }
 
     pub fn write(&self, mpu: &mut crate::regs::mpu::Mpu, region_number: usize) {
-        pw_log::debug!(
+        log_if::debug_if!(
+            LOG_MPU,
             "MPU[{}]: RBAR=0x{:08X} RASR=0x{:08X}",
             region_number as usize,
             self.rbar.0 as usize,
@@ -314,7 +317,8 @@ impl MemoryConfig {
                 .with_privdefena(true),
         );
 
-        pw_log::info!(
+        log_if::info_if!(
+            LOG_MPU,
             "Programming {} MPU regions (PMSAv7)",
             self.mpu_regions.len() as usize
         );
@@ -353,7 +357,8 @@ impl MemoryConfig {
             .take(self.generic_regions.len())
             .enumerate()
         {
-            pw_log::debug!(
+            log_if::debug_if!(
+                LOG_MPU,
                 "MPU region {}: RBAR={:#010x}, RASR={:#010x}",
                 index as usize,
                 region.rbar.0 as usize,
