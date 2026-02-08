@@ -97,9 +97,12 @@ pub fn systick_init() {
         .with_tickint(true);
     systick_regs.csr.write(csr_val);
 
-    let ticks_per_10ms = systick_regs.calib.read().tenms();
+    let calib = systick_regs.calib.read();
+    let ticks_per_10ms = calib.tenms();
     info!("Ticks per 10ms: {}", ticks_per_10ms as u32);
-    if ticks_per_10ms > 0 {
+    // Only validate CALIB against SYS_TICK_HZ when the hardware reports a
+    // reliable value: TENMS nonzero, no skew, and a reference clock present.
+    if ticks_per_10ms > 0 && !calib.skew() && !calib.noref() {
         pw_assert::eq!(
             (ticks_per_10ms * 100) as u32,
             KernelConfig::SYS_TICK_HZ as u32

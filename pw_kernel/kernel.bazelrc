@@ -141,6 +141,28 @@ test:k_qemu_virt_riscv32 --run_under="//pw_kernel/tooling:qemu \
   --semihosting \
   --image "
 
+# QEMU STM32F4 target configuration (ARMv7E-M / Cortex-M4)
+# Uses netduinoplus2 machine (STM32F405, compatible with F407)
+# =======================================
+common:k_qemu_stm32f4 --config=k_common
+common:k_qemu_stm32f4 --platforms=//pw_kernel/target/qemu_stm32f4:qemu_stm32f4
+run:k_qemu_stm32f4 --run_under="//pw_kernel/tooling:qemu \
+  --cpu cortex-m4 \
+  --machine netduinoplus2 \
+  --semihosting \
+  --image "
+test:k_qemu_stm32f4 --run_under="//pw_kernel/tooling:qemu \
+  --cpu cortex-m4 \
+  --machine netduinoplus2 \
+  --semihosting \
+  --image "
+
+# STM32F407 Discovery target configuration (ARMv7E-M / Cortex-M4)
+# Real hardware with ST-Link/V2 - no QEMU run_under
+# =======================================
+common:k_stm32f407 --config=k_common
+common:k_stm32f407 --platforms=//pw_kernel/target/stm32f407:stm32f407
+
 # RP2350 target configuration
 # =======================================
 common:k_rp2350 --config=k_common
