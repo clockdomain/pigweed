@@ -80,6 +80,5 @@ rust_binary(
         "//pw_kernel/target/stm32f407:entry",
         "//pw_kernel/userspace",
         "//pw_log/rust:pw_log",
-        "@rust_crates//:cortex-m-semihosting",
     ],
 )

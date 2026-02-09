@@ -21,7 +21,6 @@
 #![no_main]
 
 use arch_arm_cortex_m::Arch;
-use cortex_m_semihosting::debug::{EXIT_FAILURE, EXIT_SUCCESS, exit};
 use target_common::{TargetInterface, declare_target};
 use {console_backend as _, entry as _};
 
@@ -30,16 +29,14 @@ pub struct Target {}
 impl TargetInterface for Target {
     const NAME: &'static str = "STM32F407 Kernelspace Threads";
 
+    fn console_init() {}
+
     fn main() -> ! {
         static mut APP_STATE: threads::AppState<Arch> = threads::AppState::new(Arch);
         // SAFETY: `main` is only executed once, so we never generate more
         // than one `&mut` reference to `APP_STATE`.
         #[expect(static_mut_refs)]
-        let exit_status = match threads::main(Arch, unsafe { &mut APP_STATE }) {
-            Ok(()) => EXIT_SUCCESS,
-            Err(_e) => EXIT_FAILURE,
-        };
-        exit(exit_status);
+        let _ = threads::main(Arch, unsafe { &mut APP_STATE });
         #[expect(clippy::empty_loop)]
         loop {}
     }
