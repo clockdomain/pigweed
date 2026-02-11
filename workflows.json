@@ -344,6 +344,21 @@
       ]
     },
     {
+      "name": "k_qemu_ast1030",
+      "build_config": {
+        "name": "k_qemu_ast1030_config",
+        "description": "QEMU AST1030 config (ARMv7-M)",
+        "build_type": "bazel",
+        "args": [
+          "--config=k_qemu_ast1030"
+        ],
+        "env": {}
+      },
+      "targets": [
+        "//pw_kernel/..."
+      ]
+    },
+    {
       "name": "k_rp2350",
       "build_config": {
         "name": "k_rp2350_config",
@@ -411,6 +426,26 @@
         "args": [
           "--config=k_lint",
           "--config=k_qemu_virt_riscv32"
+        ],
+        "env": {},
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": true
+        }
+      },
+      "targets": [
+        "//pw_kernel/..."
+      ]
+    },
+    {
+      "name": "k_qemu_ast1030_lint",
+      "build_config": {
+        "name": "k_qemu_ast1030_lint_config",
+        "description": "Kernel QEMU AST1030 lint config",
+        "build_type": "bazel",
+        "args": [
+          "--config=k_lint",
+          "--config=k_qemu_ast1030"
         ],
         "env": {},
         "driver_options": {
@@ -690,10 +725,12 @@
         "k_host",
         "k_doctest",
         "k_qemu_mps2_an505",
+        "k_qemu_ast1030",
         "k_qemu_virt_riscv32",
         "k_rp2350",
         "k_host_lint",
         "k_qemu_mps2_an505_lint",
+        "k_qemu_ast1030_lint",
         "k_qemu_virt_riscv32_lint",
         "k_rp2350_lint"
       ]
