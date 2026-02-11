@@ -36,6 +36,8 @@
 //!
 //! [`ArchConfigInterface::validate_mpu`]: crate::ArchConfigInterface::validate_mpu
 
+pub mod pmsav7;
+
 use std::fmt;
 
 use serde::{Deserialize, Serialize};

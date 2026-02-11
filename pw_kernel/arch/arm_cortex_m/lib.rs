@@ -21,7 +21,6 @@ use pw_log::info;
 
 mod exceptions;
 mod nvic;
-mod protection;
 mod regs;
 mod spinlock;
 #[cfg(feature = "user_space")]
@@ -29,8 +28,20 @@ mod syscall;
 mod threads;
 mod timer;
 
-// Re-exports to conform to simplify public API.
+// Architecture-specific protection modules
+#[cfg(feature = "armv7m")]
+pub mod protection_v7;
+#[cfg(feature = "armv8m")]
+pub mod protection_v8;
+
+#[cfg(feature = "armv7m")]
+pub use protection_v7 as protection;
+#[cfg(feature = "armv8m")]
+pub use protection_v8 as protection;
+
+// Re-export commonly used types from the protection module
 pub use protection::MemoryConfig;
+
 pub use spinlock::BareSpinLock;
 pub use threads::ArchThreadState;
 

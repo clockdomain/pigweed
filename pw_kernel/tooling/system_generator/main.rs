@@ -22,16 +22,18 @@ use system_generator::{ArchConfigInterface, Cli, SystemGenerator, system_config}
 #[serde(rename_all = "lowercase")]
 pub enum ArchConfig {
     Armv8M(system_config::Armv8MConfig),
+    Armv7M(system_config::Armv7MConfig),
     RiscV(system_config::RiscVConfig),
 }
 
-// SystemGenerator supports Armv8m and RiscV by default.
+// SystemGenerator supports Armv8M, Armv7M, and RiscV by default.
 // New architectures which are implemented out of tree can
 // implement ArchConfigInterface with all required architectures.
 impl ArchConfigInterface for ArchConfig {
     fn get_arch_crate_name(&self) -> &'static str {
         match self {
             ArchConfig::Armv8M(config) => config.get_arch_crate_name(),
+            ArchConfig::Armv7M(config) => config.get_arch_crate_name(),
             ArchConfig::RiscV(config) => config.get_arch_crate_name(),
         }
     }
@@ -39,6 +41,7 @@ impl ArchConfigInterface for ArchConfig {
     fn get_start_fn_address(&self, flash_start_address: u64) -> u64 {
         match self {
             ArchConfig::Armv8M(config) => config.get_start_fn_address(flash_start_address),
+            ArchConfig::Armv7M(config) => config.get_start_fn_address(flash_start_address),
             ArchConfig::RiscV(config) => config.get_start_fn_address(flash_start_address),
         }
     }
@@ -49,6 +52,7 @@ impl ArchConfigInterface for ArchConfig {
     ) -> Result<()> {
         match self {
             ArchConfig::Armv8M(arch_config) => arch_config.calculate_and_validate_config(config),
+            ArchConfig::Armv7M(arch_config) => arch_config.calculate_and_validate_config(config),
             ArchConfig::RiscV(arch_config) => arch_config.calculate_and_validate_config(config),
         }
     }
@@ -56,6 +60,7 @@ impl ArchConfigInterface for ArchConfig {
     fn get_interrupt_table_link_section(&self) -> Option<String> {
         match self {
             ArchConfig::Armv8M(config) => config.get_interrupt_table_link_section(),
+            ArchConfig::Armv7M(config) => config.get_interrupt_table_link_section(),
             ArchConfig::RiscV(config) => config.get_interrupt_table_link_section(),
         }
     }
@@ -63,6 +68,7 @@ impl ArchConfigInterface for ArchConfig {
     fn validate_mpu(&self, config: &system_config::BaseConfig) -> Result<()> {
         match self {
             ArchConfig::Armv8M(arch_config) => arch_config.validate_mpu(config),
+            ArchConfig::Armv7M(arch_config) => arch_config.validate_mpu(config),
             ArchConfig::RiscV(arch_config) => arch_config.validate_mpu(config),
         }
     }

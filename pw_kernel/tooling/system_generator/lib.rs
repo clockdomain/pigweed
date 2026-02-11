@@ -26,6 +26,8 @@ use serde::de::DeserializeOwned;
 pub mod mpu_validation;
 pub mod system_config;
 
+use mpu_validation::MpuValidationMode;
+use mpu_validation::pmsav7::validate_pmsav7_layout;
 use system_config::ObjectConfig::Interrupt;
 use system_config::{InterruptTableConfig, MemoryMapping, MemoryMappingType, SystemConfig};
 
@@ -156,6 +158,106 @@ impl ArchConfigInterface for system_config::Armv8MConfig {
 
     fn get_interrupt_table_link_section(&self) -> Option<String> {
         Some(".vector_table.interrupts".to_string())
+    }
+}
+
+impl ArchConfigInterface for system_config::Armv7MConfig {
+    fn get_arch_crate_name(&self) -> &'static str {
+        "arch_arm_cortex_m"
+    }
+
+    fn get_start_fn_address(&self, flash_start_address: u64) -> u64 {
+        // On Armv7M, the +1 is to denote thumb mode.
+        flash_start_address + 1
+    }
+
+    fn calculate_and_validate_config(
+        &mut self,
+        config: &mut system_config::BaseConfig,
+    ) -> Result<()> {
+        for app in &mut config.apps {
+            // Add a ReadOnlyExecutable mapping for the kernel's code into userspace
+            // to allow the cortex_m's `svc_return` to drop privaldge and still
+            // be executable.
+            //
+            // TODO: https://pwbug.dev/465500606 - Isolate `svc_return` into its own section
+            // to allow selectively mapping it into userspace instead of the whole kernel.
+            app.process.memory_mappings.insert(
+                0,
+                MemoryMapping {
+                    name: "kernel_code".to_string(),
+                    ty: MemoryMappingType::ReadOnlyExecutable,
+                    start_address: config.kernel.flash_start_address,
+                    size_bytes: config.kernel.flash_size_bytes,
+                },
+            );
+        }
+        Ok(())
+    }
+
+    fn get_interrupt_table_link_section(&self) -> Option<String> {
+        Some(".vector_table.interrupts".to_string())
+    }
+
+    fn validate_mpu(&self, config: &system_config::BaseConfig) -> Result<()> {
+        let kernel = &config.kernel;
+
+        // Build app list: (name, flash_start, flash_end, ram_start, ram_end)
+        let apps: Vec<_> = config
+            .apps
+            .iter()
+            .map(|app| {
+                (
+                    app.name.clone(),
+                    app.flash_start_address,
+                    app.flash_start_address + app.flash_size_bytes,
+                    app.ram_start_address,
+                    app.ram_start_address + app.ram_size_bytes,
+                )
+            })
+            .collect();
+
+        let issues = validate_pmsav7_layout(
+            kernel.flash_start_address,
+            kernel.flash_start_address + kernel.flash_size_bytes,
+            kernel.ram_start_address,
+            kernel.ram_start_address + kernel.ram_size_bytes,
+            &apps,
+        );
+
+        if issues.is_empty() {
+            return Ok(());
+        }
+
+        // Report issues based on validation mode
+        let mode = kernel.mpu_validation;
+        let has_errors = issues.iter().any(|i| i.is_error);
+
+        for issue in &issues {
+            match mode {
+                MpuValidationMode::Strict => {
+                    eprintln!("error: {}", issue);
+                }
+                MpuValidationMode::Warn => {
+                    if issue.is_error {
+                        eprintln!("warning: {}", issue);
+                    } else {
+                        eprintln!("info: {}", issue);
+                    }
+                }
+                MpuValidationMode::Permissive => {
+                    // Silent - no output in permissive mode
+                }
+            }
+        }
+
+        if mode == MpuValidationMode::Strict && has_errors {
+            return Err(anyhow!(
+                "PMSAv7 MPU validation failed. Use mpu_validation: \"warn\" to continue anyway."
+            ));
+        }
+
+        Ok(())
     }
 }
 
