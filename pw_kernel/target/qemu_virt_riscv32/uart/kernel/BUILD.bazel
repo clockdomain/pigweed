@@ -25,6 +25,7 @@ system_image(
     platform = "//pw_kernel/target/qemu_virt_riscv32",
     system_config = ":system_config",
     tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
     user_space = False,
     visibility = ["//visibility:public"],
 )
