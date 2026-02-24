@@ -82,8 +82,8 @@ pub struct KernelConfig {
     pub ram_size_bytes: u64,
     pub interrupt_table: Option<InterruptTableConfig>,
     /// MPU validation mode for memory layout compatibility checking.
-    /// - "strict": Fail build on any MPU issues
-    /// - "warn": Emit warnings but continue (default)
+    /// - "strict": Fail build on any MPU issues (default)
+    /// - "warn": Emit warnings but continue
     /// - "permissive": Silent
     #[serde(default)]
     pub mpu_validation: MpuValidationMode,

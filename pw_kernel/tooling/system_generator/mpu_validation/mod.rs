@@ -47,9 +47,9 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 pub enum MpuValidationMode {
     /// Fail the build if any MPU compatibility issues are detected.
+    #[default]
     Strict,
     /// Emit warnings for MPU compatibility issues but continue.
-    #[default]
     Warn,
     /// Silent - no output for MPU issues.
     Permissive,
