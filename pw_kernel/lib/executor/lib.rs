@@ -12,15 +12,24 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-//! Minimal async executor for pw_kernel userspace.
+//! Async executor for pw_kernel userspace.
 //!
 //! Wraps Embassy's [`raw::Executor`] to provide waker-based task scheduling
 //! with dynamic spawning via [`Spawner`]. Tasks are only re-polled when their
 //! waker is invoked, avoiding unnecessary work.
 //!
-//! This is the Phase 1 executor — a pure-Rust poll loop with no kernel
-//! dependencies. Phase 2 adds a reactor that blocks via `object_wait` when
-//! no tasks are ready.
+//! The executor accepts a caller-provided `idle` closure that runs when no
+//! tasks are ready. This allows plugging in the appropriate blocking strategy:
+//!
+//! ```rust,ignore
+//! // Spin-wait (no kernel dependency):
+//! executor.run(init, || core::hint::spin_loop());
+//!
+//! // Block via kernel object_wait:
+//! executor.run(init, || {
+//!     let _ = syscall::object_wait(wake_handle, Signals::USER, Instant::MAX);
+//! });
+//! ```
 
 #![no_std]
 
@@ -73,13 +82,11 @@ impl Executor {
     /// After `init` returns, the executor polls tasks in a loop. Tasks can
     /// spawn additional tasks by holding a copy of the `Spawner`.
     ///
-    /// # Phase 1 idle behavior
-    ///
-    /// When no tasks are ready, the executor spins. Phase 2 replaces this
-    /// with `object_wait` to block efficiently.
+    /// The `idle` closure is called when no tasks are ready. Use it to block
+    /// efficiently (e.g. via `object_wait`) or spin-wait.
     ///
     /// This function never returns.
-    pub fn run(&'static self, init: impl FnOnce(Spawner)) -> ! {
+    pub fn run(&'static self, init: impl FnOnce(Spawner), idle: impl Fn()) -> ! {
         init(self.inner.spawner());
 
         loop {
@@ -88,9 +95,7 @@ impl Executor {
             unsafe { self.inner.poll() };
 
             if !SIGNAL_WORK.swap(false, Ordering::AcqRel) {
-                // No tasks were woken — spin until the pender fires.
-                // Phase 2 replaces this with object_wait blocking.
-                core::hint::spin_loop();
+                idle();
             }
         }
     }

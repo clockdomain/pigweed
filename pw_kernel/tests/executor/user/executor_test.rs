@@ -125,9 +125,10 @@ fn verify_results() -> Result<()> {
 #[entry]
 fn entry() -> ! {
     pw_log::info!("🔄 RUNNING: async executor test");
-    EXECUTOR.run(|spawner| {
-        spawner.spawn(task_main(spawner)).unwrap();
-    });
+    EXECUTOR.run(
+        |spawner| { spawner.spawn(task_main(spawner)).unwrap(); },
+        || core::hint::spin_loop(),
+    );
 }
 
 #[panic_handler]
