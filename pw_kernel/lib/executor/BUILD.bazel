@@ -11,31 +11,19 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//pw_kernel/tooling:app_package.bzl", "app_package")
 
-rust_binary(
-    name = "executor_test",
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "executor",
     srcs = [
-        "executor_test.rs",
+        "lib.rs",
     ],
     edition = "2024",
     tags = ["kernel"],
-    visibility = ["//visibility:public"],
     deps = [
-        ":app_executor_test",
-        "//pw_kernel/lib/executor",
-        "//pw_kernel/userspace",
-        "//pw_log/rust:pw_log",
-        "//pw_status/rust:pw_status",
         "@rust_crates//:embassy-executor",
     ],
-)
-
-app_package(
-    name = "app_executor_test",
-    app_name = "executor_test",
-    edition = "2024",
-    system_config = "//pw_kernel/target:system_config_file",
-    tags = ["kernel"],
 )

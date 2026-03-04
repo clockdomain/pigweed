@@ -25,6 +25,7 @@ path = "fake.rs"
 bitflags = "2.9.1"
 byteorder = { version = "1.5.0", default-features = false }
 cortex-m = "0.7.7"
+embassy-executor = { version = "0.9.1", default-features = false }
 cortex-m-rt = "0.7.5"
 cortex-m-semihosting = "0.5.0"
 embedded-io = "0.6.1"

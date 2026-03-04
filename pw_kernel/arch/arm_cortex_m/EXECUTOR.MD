@@ -5,12 +5,12 @@
 This document analyzes the feasibility of building an async executor (Embassy-style)
 on top of the Pigweed kernel (`pw_kernel`), using **only Rust** — no C++ involved.
 
-**Verdict: Yes, with two small syscall gaps to fill.**
+**Verdict: Yes, with no new syscalls required.**
 
-pw_kernel is written entirely in Rust and already provides the core primitives
-needed. The missing pieces are a userspace `get_time()` syscall and a
-userspace `yield_wait()` / `sleep_until()` syscall — both straightforward
-additions to the existing syscall infrastructure.
+pw_kernel is written entirely in Rust and already provides all the core
+primitives needed. The existing `object_wait` syscall handles blocking,
+yielding, and deadline-based sleeping. No new syscalls are required for
+a minimal executor.
 
 ---
 
@@ -28,8 +28,6 @@ additions to the existing syscall infrastructure.
 | **Events** | `Event` + `EventSignaler` (ISR-safe) | `kernel/sync/event.rs` | Waker-like: signaler can wake from interrupt context |
 | **Interrupt objects** | `InterruptObject` + `interrupt_ack` | `kernel/object/interrupt.rs` | Hardware IRQ → signal → userspace async wake |
 | **Timer queue** | `Timer`, `schedule_timer`, `cancel_timer` | `kernel/scheduler/timer.rs` | Deadline-driven wakeups for sleep/timeout futures |
-| **Kernel-side sleep** | `sleep_until(kernel, deadline)` | `kernel/scheduler.rs` | Blocks thread until deadline — **kernel-side only** |
-| **Kernel-side yield** | `yield_timeslice(kernel)` | `kernel/scheduler.rs` | Cooperative yield — **kernel-side only** |
 | **Mutex with deadline** | `Mutex::lock()`, `Mutex::lock_until(deadline)` | `kernel/sync/mutex.rs` | Async mutex foundation |
 | **SpinLock** | `SpinLock::lock()` (disables preemption) | `kernel/sync/spinlock.rs` | Executor-internal critical sections |
 | **Preemption control** | `PreemptDisableGuard` | `kernel/scheduler.rs` | Protect executor internals |
@@ -37,13 +35,6 @@ additions to the existing syscall infrastructure.
 | **Idle / WFI** | `Arch::idle()` → `cortex_m::asm::wfi()` | `arch/arm_cortex_m/threads.rs` | Power-efficient sleep when no tasks ready |
 | **Priority scheduler** | Priority-based round-robin, N priority levels | `kernel/scheduler/algorithm.rs` | Thread scheduling between executor instances |
 | **Process/MPU support** | Per-process memory config, privilege separation | `arch/arm_cortex_m/protection_v7.rs`, `v8.rs` | Isolation between executor processes |
-
-### What's Missing (Two Gaps)
-
-| Gap | Status | Effort | Details |
-|-----|--------|--------|---------|
-| **Userspace `get_time()` syscall** | Placeholder returns 0 | ~30 lines | `userspace/time.rs` has `Clock::now()` returning `Instant::from_ticks(0)`. Need new `SysCallId::GetTime` that reads `Arch::now()`. |
-| **Userspace `sleep_until()` or `yield_wait()` syscall** | Kernel-side only | ~40 lines | `sleep_until()` and `yield_timeslice()` exist in `kernel/scheduler.rs` but have no syscall wrappers. Need new `SysCallId` entries. |
 
 ---
 
@@ -90,9 +81,9 @@ additions to the existing syscall infrastructure.
 | **Pender / Waker** | `EventSignaler::signal()` | ISR-safe, wakes blocked threads |
 | **Reactor (I/O readiness)** | `object_wait(handle, signals, deadline)` | Blocks until signals match or deadline; per-object signal bits |
 | **Multiplexed reactor** | `WaitGroup` + `object_wait` on group handle | Wait on N objects; returns `user_data` identifying which fired |
-| **Timer / sleep** | `object_wait` with `deadline` **or** `sleep_until` (needs syscall) | Every blocking syscall already accepts a deadline parameter |
+| **Timer / sleep** | `object_wait` with `deadline` | Every blocking syscall already accepts a deadline parameter |
 | **Spawn** | `embassy_executor::raw::Executor::spawner()` | Embassy handles task management; OS provides the thread |
-| **Yield** | `yield_timeslice` (needs syscall) **or** `object_wait` with `Instant::MIN` | Cooperative yield between executor poll loops |
+| **Yield** | `object_wait` with `Instant::MIN` | Returns immediately with `DeadlineExceeded`; gives scheduler a chance to run other threads |
 | **Critical section** | PRIMASK-based `BareSpinLock` (via SVC if unprivileged) | Interrupt disable/enable — already implemented |
 | **Idle / low-power** | `Arch::idle()` → `wfi()` | Called by scheduler when no threads are ready |
 
@@ -148,44 +139,18 @@ impl PwExecutor {
             // Poll all ready async tasks.
             unsafe { self.inner.poll() };
 
-            // If no new work was signaled, yield to the kernel scheduler.
-            // The kernel will put this thread to sleep until an event
-            // (interrupt, signal, timer) wakes it.
+            // If no new work was signaled, block until the pender wakes us.
+            // object_wait will put this thread to sleep until Signals::USER
+            // is raised on the wake handle by the pender.
             if !SIGNAL_WORK.swap(false, Ordering::SeqCst) {
-                // Option A: sleep until next timer deadline
-                // syscall::sleep_until(next_deadline);
-                //
-                // Option B: wait on a dedicated event handle
-                // syscall::object_wait(self.wake_handle, Signals::USER, Instant::MAX);
-                //
-                // Option C: yield timeslice (spin-waits, less power efficient)
-                // syscall::yield_timeslice();
-                //
-                // Best option: object_wait on a kernel Event object
-                // that the pender signals via EventSignaler.
-                yield_to_kernel();
+                let _ = syscall::object_wait(
+                    WAKE_HANDLE,
+                    Signals::USER,
+                    Instant::MAX,
+                );
             }
         }
     }
-}
-
-/// Yield to the kernel, blocking until the pender signals new work.
-///
-/// Uses `object_wait` on a dedicated signal object. The pender
-/// sets `Signals::USER` on this object from interrupt/thread context.
-fn yield_to_kernel() {
-    // In the real implementation, this would be:
-    //   syscall::object_wait(WAKE_HANDLE, Signals::USER, Instant::MAX)
-    // where WAKE_HANDLE is a kernel object whose EventSignaler is
-    // used by __pender().
-    //
-    // For now, with only existing syscalls, we can use object_wait
-    // with a very short deadline as a yielding sleep:
-    let _ = syscall::object_wait(
-        WAKE_HANDLE,
-        Signals::USER,
-        Instant::MAX,
-    );
 }
 ```
 
@@ -332,76 +297,13 @@ impl Reactor {
 
 ---
 
-## Gaps to Fill
-
-### 1. `get_time()` Syscall (~30 Lines)
-
-**Current state**: `userspace/time.rs` has a placeholder:
-```rust
-fn now() -> Instant<Self> {
-    // Placeholder until a get_time() system call exists.
-    Instant::from_ticks(0)
-}
-```
-
-**What to add**:
-
-```rust
-// In syscall_defs.rs — add to SysCallId enum:
-SysCallId::GetTime = 0x0007,
-
-// In kernel/syscall.rs — add handler:
-fn handle_get_time<K: Kernel>(kernel: K) -> Result<u64> {
-    Ok(kernel.now().ticks())
-}
-
-// In userspace/time.rs — fix Clock::now():
-fn now() -> Instant<Self> {
-    Instant::from_ticks(syscall::get_time())
-}
-```
-
-### 2. `sleep_until()` / `yield_wait()` Syscall (~40 Lines)
-
-**Current state**: `sleep_until()` and `yield_timeslice()` are kernel-internal.
-
-**What to add**:
-
-```rust
-// In syscall_defs.rs — add to SysCallId enum:
-SysCallId::SleepUntil    = 0x0008,
-SysCallId::YieldTimeslice = 0x0009,
-
-// In kernel/syscall.rs — add handlers:
-fn handle_sleep_until<K: Kernel>(kernel: K, mut args: K::SyscallArgs<'_>) -> Result<u64> {
-    let deadline: Instant<K::Clock> = args.next_instant()?;
-    scheduler::sleep_until(kernel, deadline)?;
-    Ok(0)
-}
-
-fn handle_yield_timeslice<K: Kernel>(kernel: K) -> Result<u64> {
-    scheduler::yield_timeslice(kernel);
-    Ok(0)
-}
-
-// In userspace/syscall.rs — add wrappers:
-pub fn sleep_until(deadline: Instant) -> Result<()> { ... }
-pub fn yield_timeslice() -> Result<()> { ... }
-```
-
-**Note:** Strictly speaking, neither syscall is required for a minimal executor.
-`object_wait` with a deadline already provides both sleeping and yielding
-behavior. These syscalls are convenience optimizations.
-
----
-
 ## What pw_kernel Already Provides (No Porting Needed)
 
 Compared to typical embedded async executor requirements:
 
 | Executor Requirement | pw_kernel Equivalent | Status |
 |--------------------------|---------------------|--------|
-| Yield-wait syscall | `object_wait` with deadline / `yield_timeslice` | ✅ Exists (object_wait); yield needs syscall wrapper |
+| Yield-wait syscall | `object_wait` with deadline | ✅ Exists — `Instant::MAX` to block, `Instant::MIN` to yield |
 | Task scheduling | Priority-based round-robin scheduler | ✅ Exceeds requirement |
 | Context switching | PendSV-based, full register save/restore | ✅ Exists |
 | Global work flag / Pender | `EventSignaler::signal()` (ISR-safe) | ✅ Exists |
@@ -418,14 +320,13 @@ Compared to typical embedded async executor requirements:
 
 ## Implementation Plan
 
-### Phase 1: Minimal Executor (1–2 days)
-1. Add `SysCallId::GetTime` syscall
-2. Add `SysCallId::SleepUntil` syscall (optional — can use `object_wait`)
-3. Implement `PwExecutor` using `embassy_executor::raw`
-4. Pender uses `EventSignaler::signal()` via a dedicated handle
-5. Executor loop: `poll()` → check `SIGNAL_WORK` → `object_wait` on wake handle
+### Phase 1: Minimal Executor (No New Syscalls)
+1. Implement `PwExecutor` using `embassy_executor::raw` (or simple poll loop)
+2. Pender sets `AtomicBool`; executor checks it each iteration
+3. Executor loop: `poll()` → check `SIGNAL_WORK` → `object_wait` on wake handle to block
+4. All required syscalls (`object_wait`) already exist
 
-### Phase 2: Efficient Reactor (2–3 days)
+### Phase 2: Efficient Reactor
 1. Build `Reactor` using `WaitGroup` for multiplexed I/O
 2. Implement `ChannelTransactFuture` for async IPC
 3. Implement `InterruptFuture` for hardware interrupt wakeup
@@ -458,10 +359,10 @@ The kernel already has:
 - Priority-based preemptive scheduling
 - Process isolation and MPU support
 
-The only gaps are two trivial syscall additions (`get_time`, `sleep_until`)
-that expose existing kernel-internal functionality to userspace. The executor
-itself is ~100 lines of Rust wrapping `embassy_executor::raw`, with the
-heavy lifting done by pw_kernel's existing object/signal/wait infrastructure.
+No new syscalls are required. The existing `object_wait` syscall provides
+blocking, yielding, and deadline-based sleeping. The executor itself is
+~100 lines of Rust wrapping `embassy_executor::raw`, with the heavy
+lifting done by pw_kernel's existing object/signal/wait infrastructure.
 
 pw_kernel is significantly more capable than the "bare minimum OS" originally
 described — it provides a full RTOS with IPC, synchronization, memory
