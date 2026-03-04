@@ -198,4 +198,4 @@ async fn sleep_until(deadline: Instant) {
 }
 ```
 
-Currently blocked on `Clock::now()` returning a placeholder (no `get_time` syscall yet).
+Note: the executor and reactor do not depend on `get_time`. All blocking is done via `object_wait` deadlines (`Instant::MIN` for non-blocking, `Instant::MAX` for indefinite). A `get_time` syscall would only be needed by application-level timer futures (e.g., `sleep_until`, `with_timeout`) that need to read the current clock to compute a deadline. The core executor loop and I/O futures work without it.
