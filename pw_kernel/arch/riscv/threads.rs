@@ -17,8 +17,8 @@ use core::mem;
 use core::ptr::NonNull;
 
 use exit_status::ExitStatus;
-use kernel::Arch;
 use kernel::interrupt_controller::InterruptController;
+use kernel::{Arch, Kernel};
 use kernel::scheduler::{self, SchedulerState, Stack, ThreadLocalState};
 use kernel::sync::spinlock::SpinLockGuard;
 use log_if::debug_if;
@@ -182,15 +182,35 @@ impl Arch for super::Arch {
             unsafe { (*(*new_thread_state).memory_config).write() };
         }
 
-        unsafe { THREAD_LOCAL_STATE = NonNull::from_ref(&(*new_thread_state).local) }
-
         // Note: there is a small window of time where the new memory configuration
         // is active (above) and the new thread is active (below).  Since this code
         // always executes in M-Mode, it bypasses the memory config and by the
         // time control is returned to user space, the memory config is correct.
         let old_thread_frame = unsafe { &mut (*old_thread_state).frame };
         let new_thread_frame = unsafe { (*new_thread_state).frame };
+
+        // Drop the scheduler lock -- and with it, the outgoing thread's own
+        // `PreemptDisableGuard` -- before switching away, and re-acquire a
+        // fresh guard once this thread is resumed. Otherwise the lock would
+        // read as held for as long as this thread stays switched-away
+        // (potentially the entire time it's blocked), and anything else
+        // that needs it -- notably an interrupt handler waking a different
+        // thread -- would immediately trip the single-hart spinlock's
+        // recursive-lock assertion. Mirrors the Cortex-M port's
+        // `drop(sched_state)` around its PendSV trigger.
+        //
+        // This must happen *before* `THREAD_LOCAL_STATE` is switched to the
+        // new thread below: dropping the guard decrements
+        // `preempt_disable_count` via `Arch::thread_local_state()`, which
+        // reads whatever `THREAD_LOCAL_STATE` currently points at -- it must
+        // still be the outgoing thread's own state, or this decrements the
+        // new thread's (fresh, zeroed) counter instead, underflowing it.
+        drop(sched_state);
+
+        unsafe { THREAD_LOCAL_STATE = NonNull::from_ref(&(*new_thread_state).local) }
+
         riscv_context_switch(old_thread_frame, new_thread_frame);
+        let sched_state = crate::Arch.get_scheduler().lock(crate::Arch);
 
         (sched_state, true)
     }
