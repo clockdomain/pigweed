@@ -36,6 +36,20 @@ use crate::veer_pic as pic;
 
 const LOG_EXCEPTIONS: bool = false;
 
+/// Set for the duration of dispatching a hardware interrupt (not a
+/// syscall/exception) through `interrupt_handler`, below.
+///
+/// Read by `Arch::context_switch` (`threads.rs`) to decide whether a wake
+/// triggered from inside this interrupt must defer its context switch
+/// rather than perform it immediately -- see
+/// `threads::complete_deferred_context_switch` for why.
+static IN_HW_INTERRUPT: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+pub(crate) fn in_hw_interrupt() -> bool {
+    IN_HW_INTERRUPT.load(core::sync::atomic::Ordering::Relaxed)
+}
+
 pub fn early_init() {
     // Explicitly set up MTVEC to point to the kernel's handler to ensure
     // that it is set to the correct mode.
@@ -169,9 +183,21 @@ unsafe extern "C" fn trap_handler(mcause: MCauseVal, mepc: usize, frame: &mut Tr
     }
 
     match mcause.cause() {
-        Cause::Interrupt(interrupt) => unsafe { interrupt_handler(interrupt, mepc, frame) },
+        Cause::Interrupt(interrupt) => {
+            IN_HW_INTERRUPT.store(true, core::sync::atomic::Ordering::Relaxed);
+            unsafe { interrupt_handler(interrupt, mepc, frame) };
+            IN_HW_INTERRUPT.store(false, core::sync::atomic::Ordering::Relaxed);
+        }
         Cause::Exception(exception) => exception_handler(exception, mepc, frame),
     }
+
+    // Complete any context switch that `Arch::context_switch` deferred while
+    // the hardware interrupt above was being dispatched. Must run after
+    // `IN_HW_INTERRUPT` is cleared: by this point every RAII guard taken
+    // while handling the interrupt (object lock, wait-queue lock, scheduler
+    // lock) has unwound normally, so it's safe to perform the switch here.
+    // No-op if no switch was deferred.
+    crate::threads::complete_deferred_context_switch();
 
     #[cfg(feature = "exceptions_reload_pmp")]
     {

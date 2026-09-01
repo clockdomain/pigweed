@@ -37,6 +37,18 @@ const LOG_THREAD_CREATE: bool = false;
 static BOOT_THREAD_LOCAL_STATE: ThreadLocalState<crate::Arch> = ThreadLocalState::new();
 static mut THREAD_LOCAL_STATE: NonNull<ThreadLocalState<crate::Arch>> =
     NonNull::from_ref(&BOOT_THREAD_LOCAL_STATE);
+
+// Remembers the thread whose context switch was deferred because
+// `Arch::context_switch` was invoked from inside a hardware interrupt
+// handler, where performing the cooperative (ret-based) fiber switch below
+// would abandon the interrupt's own trap frame and any RAII guards still
+// held on its stack. Mirrors `ACTIVE_THREAD` on the Cortex-M port
+// (`arch/arm_cortex_m/threads.rs`), adapted for RISC-V's lack of a
+// PendSV-style tail-chaining mechanism: the deferred switch is completed by
+// `complete_deferred_context_switch`, called once from `trap_handler`'s tail
+// after the interrupt handler has fully returned.
+static mut DEFERRED_OLD_THREAD: *mut ArchThreadState = core::ptr::null_mut();
+
 #[repr(C)]
 struct ContextSwitchFrame {
     ra: usize,
@@ -162,6 +174,29 @@ impl Arch for super::Arch {
             unsafe { (*new_thread_state).frame } as usize,
         );
 
+        // A cooperative (ret-based) fiber switch is only safe to perform
+        // from an ordinary function-call context, where the compiler has
+        // already saved caller-saved registers around the call site and no
+        // RAII guards from unrelated code are still held on this stack.
+        // Neither holds while dispatching a hardware interrupt: switching
+        // here would abandon the interrupt's own trap frame (its `mepc`/
+        // `mret` bookkeeping never runs) and leak any locks still held by
+        // the interrupt handler's own call chain (e.g. the scheduler lock
+        // held across this very call). Defer to `complete_deferred_context_switch`,
+        // which performs the switch later, from `trap_handler`'s tail, once
+        // the interrupt handler has fully returned and every such guard has
+        // unwound. This matches the documented `Arch::context_switch`
+        // contract (see `kernel::Arch`) and mirrors how the Cortex-M port
+        // defers to PendSV in the same situation.
+        if crate::exceptions::in_hw_interrupt() {
+            unsafe {
+                if DEFERRED_OLD_THREAD.is_null() {
+                    DEFERRED_OLD_THREAD = old_thread_state;
+                }
+            }
+            return (sched_state, false);
+        }
+
         // Memory config is swapped before the context switch instead of after.
         // This avoids needing a special case in the user mode thread init to
         // initialize the config.
@@ -251,6 +286,67 @@ impl Arch for super::Arch {
         #[allow(clippy::empty_loop)]
         loop {}
     }
+}
+
+/// Completes a context switch that `Arch::context_switch` deferred because it
+/// was invoked from a hardware interrupt handler (see `DEFERRED_OLD_THREAD`
+/// above).
+///
+/// Must be called from `trap_handler`'s tail (`exceptions.rs`), after the
+/// interrupt handler has fully returned: by that point every RAII guard
+/// taken while handling the interrupt has unwound, so it's safe to perform
+/// the cooperative `riscv_context_switch` here.
+///
+/// No-op if no switch was deferred, which is the common case -- most
+/// interrupts don't wake a thread.
+pub(crate) fn complete_deferred_context_switch() {
+    let old_thread = unsafe {
+        let t = DEFERRED_OLD_THREAD;
+        DEFERRED_OLD_THREAD = core::ptr::null_mut();
+        t
+    };
+    if old_thread.is_null() {
+        return;
+    }
+
+    // The wake(s) that deferred this switch already ran the scheduler and
+    // recorded their decision in `current_arch_thread_state`; read back who
+    // won, as Cortex-M's `pendsv_swap_sp` does. The lock is guaranteed
+    // uncontended here: holding it disables interrupts, so this trap cannot
+    // have fired inside a scheduler-lock critical section. It must be
+    // dropped again before switching away -- both to avoid handing a live
+    // guard to the incoming thread and because the drop decrements
+    // `preempt_disable_count` through `THREAD_LOCAL_STATE`, which still
+    // points at `old_thread`'s counter (see `Arch::context_switch`).
+    let mut sched_state = crate::Arch.get_scheduler().lock(crate::Arch);
+    // Safety: `new_thread` remains current until the switch below; interrupts
+    // stay disabled for the rest of the trap, so no wake can change it.
+    let new_thread = unsafe { sched_state.get_current_arch_thread_state() };
+    drop(sched_state);
+
+    if new_thread == old_thread {
+        // Later wake(s) in the same interrupt re-selected the interrupted
+        // thread; nothing to switch.
+        return;
+    }
+
+    debug_if!(
+        LOG_CONTEXT_SWITCH,
+        "completing deferred context switch from frame {:#08x} to frame {:#08x}",
+        unsafe { (*old_thread).frame } as usize,
+        unsafe { (*new_thread).frame } as usize,
+    );
+
+    #[cfg(all(feature = "user_space", not(feature = "exceptions_reload_pmp")))]
+    if unsafe { (*new_thread).memory_config } != unsafe { (*old_thread).memory_config } {
+        unsafe { (*(*new_thread).memory_config).write() };
+    }
+
+    unsafe { THREAD_LOCAL_STATE = NonNull::from_ref(&(*new_thread).local) }
+
+    let old_thread_frame = unsafe { &mut (*old_thread).frame };
+    let new_thread_frame = unsafe { (*new_thread).frame };
+    riscv_context_switch(old_thread_frame, new_thread_frame);
 }
 
 impl kernel::scheduler::ThreadState for ArchThreadState {
