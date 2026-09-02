@@ -1,7 +1,9 @@
 # RISC-V Context Switch Post-Mortem
 
 **pw_kernel failure analysis** — branch `riscv-irq-deferred-reschedule`, commits
-`6977180eb` (fix 1) and `ca7d45591` (fix 2). Reproducer:
+`2df2e9693` (fix 1) and `978d788de` (fix 2); the branch lands fix 2 first, since
+fix 1 alone exposes bug 2. Originally landed as `6977180eb`/`ca7d45591`; fix 1
+was since simplified (see below). Reproducer:
 `//target/veer/tests/i3c_user_irq` (downstream openprot; Caliptra VeeR + PIC + I3C
 userspace-interrupt test). Written 2026-09-01. Shareable version:
 https://claude.ai/code/artifact/6ca6db86-35af-4964-bf94-80ae3be50309
@@ -20,7 +22,7 @@ the far side of a switch releases the scheduler lock the outgoing thread carried
 into it. Neither convention was written down or enforced, and the first
 *interrupt-initiated* switch violated both.
 
-| | Bug 1 (fixed by `6977180eb`) | Bug 2 (fixed by `ca7d45591`) |
+| | Bug 1 (fixed by `2df2e9693`) | Bug 2 (fixed by `978d788de`) |
 |---|---|---|
 | Defect | Context switches performed synchronously from inside the trap handler | Scheduler lock handed off across voluntary blocks instead of released |
 | Symptom | Instruction access fault at PC=0 | Panic: `"recursively locked spinlock"` |
@@ -32,7 +34,7 @@ assertion; fixing both produced 8+ consecutive clean passes of the reproducer.
 ## Background: how the RISC-V port switches threads
 
 The port's primitive is `riscv_context_switch`
-(`pw_kernel/arch/riscv/threads.rs:419`): a classic cooperative fiber switch. It
+(`pw_kernel/arch/riscv/threads.rs:411`): a classic cooperative fiber switch. It
 pushes `ra` and `s0–s11` onto the outgoing thread's stack, stores `sp` into the
 outgoing thread's frame pointer, loads the incoming thread's saved registers, and
 `ret`s — resuming the incoming thread wherever *it* last called the same function.
@@ -86,8 +88,9 @@ Failure chain:
 
 ### The fix: a software PendSV
 
-Commit `6977180eb` ports Cortex-M's stash-and-defer pattern. RISC-V has no
-tail-chaining hardware, so the "run only after everything else has unwound"
+Commit `2df2e9693` (originally `6977180eb`) ports Cortex-M's stash-and-defer
+pattern. RISC-V has no tail-chaining hardware, so the "run only after everything
+else has unwound"
 guarantee is reproduced in software at the tail of `trap_handler`:
 
 ```rust
@@ -97,7 +100,6 @@ if crate::exceptions::in_hw_interrupt() {
         if DEFERRED_OLD_THREAD.is_null() {
             DEFERRED_OLD_THREAD = old_thread_state; // first wins: thread physically running
         }
-        DEFERRED_NEW_THREAD = new_thread_state;     // latest wins: scheduler's newest decision
     }
     return (sched_state, false); // permitted by the Arch::context_switch contract
 }
@@ -115,15 +117,19 @@ Two deliberate asymmetries:
 
 - **First-wins vs. latest-wins.** If several wakes happen inside one trap,
   `DEFERRED_OLD_THREAD` keeps the *first* outgoing thread — the one whose
-  registers are actually on the CPU — while `DEFERRED_NEW_THREAD` is overwritten
-  every time, tracking the scheduler's latest choice, exactly as
-  `current_arch_thread_state` does for inline switches.
-- **Stash, don't re-lock.** The completion routine reads the stashed new-thread
-  pointer instead of re-acquiring the scheduler lock the way Cortex-M's
-  `pendsv_swap_sp` does. The scheduling decision was already made under the lock
-  during the wake; re-locking at the trap tail would collide with the possibility
-  that a blocked thread's own last voluntary switch still holds the lock — which,
-  before fix 2 landed, was the norm.
+  registers are actually on the CPU — while the incoming thread is not stashed
+  at all: the completion routine reads `current_arch_thread_state` back, which
+  the scheduler overwrote on every wake, so the latest choice wins exactly as it
+  does for inline switches. If the latest choice is the interrupted thread
+  itself, nothing is switched.
+- **Re-lock briefly, then drop.** The completion routine reads the winner under
+  the scheduler lock, the way Cortex-M's `pendsv_swap_sp` does. The lock is
+  guaranteed uncontended there — holding it disables interrupts, so the trap
+  cannot have fired inside a critical section — and the guard is dropped again
+  before the switch, for the same reasons as fix 2. This is only possible
+  because fix 2 lands first: the original `6977180eb` instead stashed the new
+  thread in a `DEFERRED_NEW_THREAD` static to avoid re-locking, since a blocked
+  thread's own last voluntary switch could still hold the lock.
 
 ## Bug 2: the scheduler lock was handed off, not released
 
@@ -163,8 +169,8 @@ re-enables interrupts via `mret`. The failure then becomes deterministic:
 
 ### The fix: release before switching, reacquire on resume
 
-Commit `ca7d45591` retires the handoff and mirrors what Cortex-M has always done
-around its PendSV trigger: drop the guard before switching away, take a fresh one
+Commit `978d788de` (originally `ca7d45591`) retires the handoff and mirrors what
+Cortex-M has always done around its PendSV trigger: drop the guard before switching away, take a fresh one
 after being resumed.
 
 ```rust
@@ -205,7 +211,7 @@ pointers being read before the `drop`, so those reads must stay ahead of it.
 | | Cortex-M port | RISC-V port (before / after) |
 |---|---|---|
 | Switch mechanism | PendSV exception; hardware guarantees it runs last, after all other exceptions unwind | Immediate cooperative switch, any context / inline when voluntary, deferred to trap tail when in a hardware interrupt |
-| Switch requested from an ISR | Sets `ACTIVE_THREAD`, pends PendSV, returns `false` | Switched mid-trap, abandoning the trap frame / stashes deferred old+new threads, returns `false` |
+| Switch requested from an ISR | Sets `ACTIVE_THREAD`, pends PendSV, returns `false` | Switched mid-trap, abandoning the trap frame / stashes the interrupted thread, returns `false`, re-reads the winner at the trap tail |
 | Scheduler lock across a block | Dropped before the PendSV trigger, reacquired on resume | Carried through the switch as an implicit handoff / dropped before the switch, reacquired on resume |
 
 The deeper point: PendSV is not just a convenience — it *is* the enforcement
@@ -219,7 +225,11 @@ inputs it had been tested with.
   alone converts it into the deterministic recursive-lock assertion — confirming
   fix 1 is necessary and correct on its own. Both fixes together: 8+ consecutive
   clean passes. Both commits also build cleanly for
-  `//pw_kernel/target/qemu_virt_riscv32`.
+  `//pw_kernel/target/qemu_virt_riscv32`. Those runs were against the original
+  commits; the simplified fix 1 (`2df2e9693`) was verified with the
+  `qemu_virt_riscv32` IRQ-reschedule regression test on branch
+  `riscv-irq-reschedule-tests` (5/5 passes, and fix 1 alone still fails there
+  deterministically) but has not been re-run on VeeR.
 - **Layered latent defects:** bug 2 predates bug 1's fix but was unobservable
   until it landed — the crash always came first, and the interrupts-off handoff
   window hid the lock state. Expect a "fixed" crash to become a different,
@@ -228,7 +238,7 @@ inputs it had been tested with.
   code relied on were real and sound — for the call graph that existed. The
   `Arch::context_switch` doc contract had anticipated interrupt-context deferral
   all along; only one of the two ports implemented it.
-- **Single-hart assumptions are load-bearing:** `IN_HW_INTERRUPT` and the two
-  deferred-thread statics use plain/relaxed accesses, sound on one hart where the
+- **Single-hart assumptions are load-bearing:** `IN_HW_INTERRUPT` and the
+  `DEFERRED_OLD_THREAD` static use plain/relaxed accesses, sound on one hart where the
   trap handler cannot race itself. An SMP port would need to revisit both this
   and the per-hart lock handling.
